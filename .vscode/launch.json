@@ -1,0 +1,14 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "ESP-IDF Monitor",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "idf.py monitor",
+            "cwd": "${workspaceFolder}",
+            "MIMode": "gdb",
+            "externalConsole": true
+        }
+    ]
+}
