@@ -22,13 +22,13 @@
 
 static const char *TAG = "ESP_CAM_WS";
 
-// ===== Конфигурационные переменные =====
+// ===== Configuration Variables =====
 #define CONFIG_FILE_PATH "/sdcard/config.txt"
 char wifiSSID[64] = {0};
 char wifiPASS[64] = {0};
 char serverURI[128] = {0};
 
-// ===== Пины ESP32-CAM (AI Thinker) =====
+// ===== ESP32-CAM Pin Definitions (AI Thinker) =====
 #define PWDN_GPIO_NUM     32
 #define RESET_GPIO_NUM    -1
 #define XCLK_GPIO_NUM     0
@@ -47,12 +47,12 @@ char serverURI[128] = {0};
 #define PCLK_GPIO_NUM     22
 #define FLASH_GPIO_NUM    4 
 
-// ===== Очередь для камеры =====
+// ===== Camera Queue =====
 #define QUEUE_SIZE 10
-#define MAX_FRAME_SIZE (60 * 1024)  // 60KB для лучшего качества
-#define FLASH_DELAY_MS 25           // Уменьшена задержка вспышки
+#define MAX_FRAME_SIZE (60 * 1024)  // 60KB
+#define FLASH_DELAY_MS 25           
 
-// Структура для передачи указателей на кадры
+// Structure for passing frames
 typedef struct {
     uint8_t *data;
     size_t len;
@@ -63,12 +63,12 @@ static QueueHandle_t cameraQueue;
 static EventGroupHandle_t wifi_event_group;
 const int WIFI_CONNECTED_BIT = BIT0;
 
-// Статистика
+// Statistics
 static uint32_t total_frames_captured = 0;
 static uint32_t total_frames_sent = 0;
 static uint32_t total_frames_dropped = 0;
 
-// ===== Чтение config.txt с SD-карты =====
+// ===== Read config.txt from SD card =====
 bool read_config_from_sd(void)
 {
     FILE *f = fopen(CONFIG_FILE_PATH, "r");
@@ -109,10 +109,10 @@ bool read_config_from_sd(void)
     return true;
 }
 
-// ===== Инициализация SD-карты =====
+// ===== Initialize SD card =====
 esp_err_t init_sd(void)
 {
-    ESP_LOGI(TAG, "Инициализация SD-карты...");
+    ESP_LOGI(TAG, "Initializing SD card...");
     sdmmc_host_t host = SDMMC_HOST_DEFAULT();
     sdmmc_slot_config_t slot_config = SDMMC_SLOT_CONFIG_DEFAULT();
     slot_config.width = 1;
@@ -126,7 +126,7 @@ esp_err_t init_sd(void)
     sdmmc_card_t *card;
     esp_err_t ret = esp_vfs_fat_sdmmc_mount("/sdcard", &host, &slot_config, &mount_config, &card);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Не удалось монтировать SD-карту: %s", esp_err_to_name(ret));
+        ESP_LOGE(TAG, "Failed to mount SD card: %s", esp_err_to_name(ret));
         return ret;
     }
 
@@ -134,14 +134,14 @@ esp_err_t init_sd(void)
     return ESP_OK;
 }
 
-// ===== Обработчики событий Wi-Fi =====
+// ===== Wi-Fi Event Handlers =====
 static void wifi_event_handler(void* arg, esp_event_base_t event_base, 
                               int32_t event_id, void* event_data)
 {
     if (event_id == WIFI_EVENT_STA_START) {
         esp_wifi_connect();
     } else if (event_id == WIFI_EVENT_STA_DISCONNECTED) {
-        ESP_LOGI(TAG, "Переподключение к Wi-Fi...");
+        ESP_LOGI(TAG, "Reconnecting to Wi-Fi...");
         esp_wifi_connect();
         xEventGroupClearBits(wifi_event_group, WIFI_CONNECTED_BIT);
     }
@@ -151,11 +151,11 @@ static void got_ip_handler(void* arg, esp_event_base_t event_base,
                            int32_t event_id, void* event_data)
 {
     ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
-    ESP_LOGI(TAG, "Wi-Fi подключен, получен IP: " IPSTR, IP2STR(&event->ip_info.ip));
+    ESP_LOGI(TAG, "Wi-Fi connected, IP obtained: " IPSTR, IP2STR(&event->ip_info.ip));
     xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_BIT);
 }
 
-// ===== Инициализация Wi-Fi =====
+// ===== Wi-Fi Initialization =====
 static void wifi_init(void)
 {
     wifi_event_group = xEventGroupCreate();
@@ -203,7 +203,7 @@ static void wifi_init(void)
     }
 }
 
-// ===== Инициализация камеры =====
+// ===== Camera Initialization =====
 static esp_err_t camera_init(void)
 {
     camera_config_t config = {
@@ -227,26 +227,26 @@ static esp_err_t camera_init(void)
         .ledc_timer     = LEDC_TIMER_0,
         .ledc_channel   = LEDC_CHANNEL_0,
         .pixel_format   = PIXFORMAT_JPEG,
-        .frame_size     = FRAMESIZE_VGA,  // Увеличили разрешение
-        .jpeg_quality   = 10,             // Лучшее качество
+        .frame_size     = FRAMESIZE_SVGA,
+        .jpeg_quality   = 12,             
         .fb_count       = 1,
         .grab_mode      = CAMERA_GRAB_WHEN_EMPTY
     };
 
     esp_err_t err = esp_camera_init(&config);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Ошибка инициализации камеры: 0x%x", err);
+        ESP_LOGE(TAG, "Camera initialization failed: 0x%x", err);
         return err;
     }
-    ESP_LOGI(TAG, "Камера инициализирована");
+    ESP_LOGI(TAG, "Camera initialized successfully");
     return ESP_OK;
 }
 
-// ===== Функция отправки фото с повторными попытками =====
+// ===== HTTP Photo Upload with Retry =====
 esp_err_t send_photo_http_with_retry(uint8_t *image_data, size_t image_len)
 {
     if (strlen(serverURI) == 0) {
-        ESP_LOGE(TAG, "URL сервера не задан");
+        ESP_LOGE(TAG, "Server URL is not set");
         return ESP_FAIL;
     }
 
@@ -255,8 +255,8 @@ esp_err_t send_photo_http_with_retry(uint8_t *image_data, size_t image_len)
 
     for (int attempt = 0; attempt < max_retries; attempt++) {
         if (attempt > 0) {
-            ESP_LOGW(TAG, "Повторная попытка отправки (%d/%d)", attempt, max_retries);
-            vTaskDelay(pdMS_TO_TICKS(100 * attempt)); // Экспоненциальная задержка
+            ESP_LOGW(TAG, "Retrying photo upload (%d/%d)", attempt, max_retries);
+            vTaskDelay(pdMS_TO_TICKS(100 * attempt));
         }
 
         esp_http_client_config_t config = {
@@ -267,7 +267,7 @@ esp_err_t send_photo_http_with_retry(uint8_t *image_data, size_t image_len)
 
         esp_http_client_handle_t client = esp_http_client_init(&config);
         if (!client) {
-            ESP_LOGE(TAG, "Ошибка инициализации HTTP-клиента");
+            ESP_LOGE(TAG, "HTTP client init failed");
             continue;
         }
 
@@ -285,16 +285,16 @@ esp_err_t send_photo_http_with_retry(uint8_t *image_data, size_t image_len)
             
             if (status_code == 200) {
                 if (attempt > 0) {
-                    ESP_LOGI(TAG, "Успешно отправлено после %d попыток: %d байт", 
+                    ESP_LOGI(TAG, "Upload succeeded after %d attempts: %d bytes", 
                             attempt + 1, (int)image_len);
                 }
                 break;
             } else {
-                ESP_LOGE(TAG, "Ошибка HTTP: %d (попытка %d)", status_code, attempt + 1);
+                ESP_LOGE(TAG, "HTTP error: %d (attempt %d)", status_code, attempt + 1);
                 err = ESP_FAIL;
             }
         } else {
-            ESP_LOGE(TAG, "Ошибка отправки: %s (попытка %d)", 
+            ESP_LOGE(TAG, "Upload failed: %s (attempt %d)", 
                     esp_err_to_name(err), attempt + 1);
         }
 
@@ -304,10 +304,10 @@ esp_err_t send_photo_http_with_retry(uint8_t *image_data, size_t image_len)
     return err;
 }
 
-// ===== Проверка подключения к серверу =====
+// ===== Check Server Connection =====
 void check_server_connection(void)
 {
-    ESP_LOGI(TAG, "Проверка подключения к серверу: %s", serverURI);
+    ESP_LOGI(TAG, "Checking server connection: %s", serverURI);
     
     char test_uri[128];
     strncpy(test_uri, serverURI, sizeof(test_uri));
@@ -329,15 +329,15 @@ void check_server_connection(void)
         esp_err_t err = esp_http_client_perform(client);
         if (err == ESP_OK) {
             int status = esp_http_client_get_status_code(client);
-            ESP_LOGI(TAG, "Сервер доступен, статус: %d", status);
+            ESP_LOGI(TAG, "Server available, status: %d", status);
         } else {
-            ESP_LOGE(TAG, "Сервер недоступен: %s", esp_err_to_name(err));
+            ESP_LOGE(TAG, "Server unavailable: %s", esp_err_to_name(err));
         }
         esp_http_client_cleanup(client);
     }
 }
 
-// ===== Очистка очереди (drop oldest) =====
+// ===== Clear Camera Queue (Drop Oldest Frames) =====
 void clear_camera_queue(void)
 {
     frame_t *frame;
@@ -350,7 +350,7 @@ void clear_camera_queue(void)
     }
 }
 
-// ===== Задача захвата с камеры =====
+// ===== Camera Capture Task =====
 void camera_capture_task(void *pvParameters)
 {
     const TickType_t xDelay = pdMS_TO_TICKS(200);
@@ -359,7 +359,6 @@ void camera_capture_task(void *pvParameters)
     
     while (1) {
         if (xEventGroupGetBits(wifi_event_group) & WIFI_CONNECTED_BIT) {
-            // Включаем вспышку
             gpio_set_level(FLASH_GPIO_NUM, 1);
             vTaskDelay(pdMS_TO_TICKS(FLASH_DELAY_MS));
 
@@ -367,24 +366,21 @@ void camera_capture_task(void *pvParameters)
             gpio_set_level(FLASH_GPIO_NUM, 0);
 
             if (!fb) {
-                ESP_LOGE(TAG, "Ошибка захвата с камеры");
+                ESP_LOGE(TAG, "Camera capture failed");
                 vTaskDelay(xDelay);
                 continue;
             }
 
-            // Проверяем размер кадра
             if (fb->len > MAX_FRAME_SIZE) {
-                ESP_LOGW(TAG, "Кадр слишком большой (%d > %d), пропускаем", 
-                        fb->len, MAX_FRAME_SIZE);
+                ESP_LOGW(TAG, "Frame too large (%d > %d), skipping", fb->len, MAX_FRAME_SIZE);
                 esp_camera_fb_return(fb);
                 vTaskDelay(xDelay);
                 continue;
             }
 
-            // Выделяем память для кадра
             frame_t *frame = malloc(sizeof(frame_t));
             if (!frame) {
-                ESP_LOGE(TAG, "Не удалось выделить память для frame");
+                ESP_LOGE(TAG, "Failed to allocate frame memory");
                 esp_camera_fb_return(fb);
                 vTaskDelay(xDelay);
                 continue;
@@ -392,7 +388,7 @@ void camera_capture_task(void *pvParameters)
 
             frame->data = malloc(fb->len);
             if (!frame->data) {
-                ESP_LOGE(TAG, "Не удалось выделить память для данных кадра");
+                ESP_LOGE(TAG, "Failed to allocate frame data");
                 free(frame);
                 esp_camera_fb_return(fb);
                 vTaskDelay(xDelay);
@@ -405,31 +401,27 @@ void camera_capture_task(void *pvParameters)
             
             total_frames_captured++;
 
-            // Проверяем заполненность очереди
             if (uxQueueMessagesWaiting(cameraQueue) >= QUEUE_SIZE - 1) {
-                ESP_LOGW(TAG, "Очередь переполнена, очищаем старые кадры");
+                ESP_LOGW(TAG, "Queue full, clearing old frames");
                 clear_camera_queue();
             }
 
-            // Отправляем в очередь
             if (xQueueSend(cameraQueue, &frame, pdMS_TO_TICKS(50)) != pdTRUE) {
-                ESP_LOGW(TAG, "Не удалось отправить в очередь, кадр %u пропущен", 
-                        frame->frame_number);
+                ESP_LOGW(TAG, "Failed to enqueue frame %u, dropped", frame->frame_number);
                 free(frame->data);
                 free(frame);
                 total_frames_dropped++;
             }
 
-            // Логируем каждые 10 кадров
             if (++log_counter % 10 == 0) {
-                ESP_LOGI(TAG, "Статистика: захвачено %u, отправлено %u, пропущено %u",
+                ESP_LOGI(TAG, "Stats: Captured %u, Sent %u, Dropped %u",
                         total_frames_captured, total_frames_sent, total_frames_dropped);
             }
             
             esp_camera_fb_return(fb);
         } else {
             if (log_counter % 20 == 0) {
-                ESP_LOGW(TAG, "Ожидание подключения Wi-Fi...");
+                ESP_LOGW(TAG, "Waiting for Wi-Fi connection...");
             }
             log_counter++;
         }
@@ -438,7 +430,7 @@ void camera_capture_task(void *pvParameters)
     }
 }
 
-// ===== Задача отправки кадров =====
+// ===== Camera Send Task =====
 void camera_send_task(void *pvParameters)
 {
     ESP_LOGI(TAG, "Send task started");
@@ -453,10 +445,8 @@ void camera_send_task(void *pvParameters)
                     esp_err_t err = send_photo_http_with_retry(frame->data, frame->len);
                     if (err == ESP_OK) {
                         total_frames_sent++;
-                        
-                        // Логируем каждые 5 отправленных кадров
                         if (++log_counter % 5 == 0) {
-                            ESP_LOGI(TAG, "Отправлен кадр %u, размер: %d байт",
+                            ESP_LOGI(TAG, "Frame %u sent, size: %d bytes",
                                     frame->frame_number, frame->len);
                         }
                     }
@@ -469,13 +459,12 @@ void camera_send_task(void *pvParameters)
     }
 }
 
-// ===== Главная функция =====
+// ===== Main Function =====
 void app_main(void)
 {
-    ESP_LOGI(TAG, "ESP32-CAM потоковая передача (улучшенная версия)");
+    ESP_LOGI(TAG, "ESP32-CAM Streaming (enhanced version)");
     ESP_LOGI(TAG, "Free heap: %d bytes", esp_get_free_heap_size());
     
-    // Инициализация NVS
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
@@ -487,12 +476,12 @@ void app_main(void)
     ESP_ERROR_CHECK(esp_event_loop_create_default());
     
     if (init_sd() != ESP_OK) {
-        ESP_LOGE(TAG, "Не удалось инициализировать SD-карту");
+        ESP_LOGE(TAG, "Failed to initialize SD card");
         return;
     }
     
     if (!read_config_from_sd()) {
-        ESP_LOGE(TAG, "Не удалось прочитать конфигурацию");
+        ESP_LOGE(TAG, "Failed to read configuration");
         return;
     }
 
@@ -501,7 +490,7 @@ void app_main(void)
     check_server_connection();
 
     if (camera_init() != ESP_OK) {
-        ESP_LOGE(TAG, "Не удалось инициализировать камеру");
+        ESP_LOGE(TAG, "Failed to initialize camera");
         return;
     }
 
@@ -515,7 +504,6 @@ void app_main(void)
         return;
     }
 
-    // Создаем задачи с увеличенным стеком
     if (xTaskCreate(camera_capture_task, "camera_capture_task", 15360, NULL, 5, NULL) != pdPASS) {
         ESP_LOGE(TAG, "Failed to create camera capture task");
         return;
@@ -526,5 +514,5 @@ void app_main(void)
         return;
     }
     
-    ESP_LOGI(TAG, "Приложение запущено успешно");
+    ESP_LOGI(TAG, "Application started successfully");
 }
