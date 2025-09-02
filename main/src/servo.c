@@ -3,16 +3,20 @@
 #include "driver/ledc.h"
 #include "esp_http_server.h"
 
+static int current_angle1 = 90;
+static int current_angle2 = 45;
+static const int max_angle1 = 180;
+static const int max_angle2 = 90;
+
 void set_servo(int pin, int angle, int max_angle)
 {
-    if(angle < 0) angle = 0;
-    if(angle > max_angle) angle = max_angle;
+    if (angle < 0) angle = 0;
+    if (angle > max_angle) angle = max_angle;
 
     int duty_us = 500 + (angle * (2500 - 500) / max_angle);
     int channel = (pin == SERVO_PIN_1 ? LEDC_CHANNEL_0 : LEDC_CHANNEL_1);
-    
+
     uint32_t duty = (duty_us * (1 << 16)) / 20000;
-    
     ledc_set_duty(LEDC_HIGH_SPEED_MODE, channel, duty);
     ledc_update_duty(LEDC_HIGH_SPEED_MODE, channel);
 }
@@ -50,38 +54,46 @@ void init_servo_pwm()
     };
     ledc_channel_config(&ledc_channel2);
 
-    set_servo(SERVO_PIN_1, 90, 180);
-    set_servo(SERVO_PIN_2, 45, 90);
+    set_servo(SERVO_PIN_1, current_angle1, max_angle1);
+    set_servo(SERVO_PIN_2, current_angle2, max_angle2);
 }
 
 static esp_err_t servo_handler(httpd_req_t *req)
 {
-    char buf[32];
-    int ret = httpd_req_recv(req, buf, sizeof(buf));
-    if (ret <= 0) return ESP_FAIL;
-    buf[ret] = 0;
+    char query[64];
+    int angle1 = current_angle1;
+    int angle2 = current_angle2;
 
-    int angle1 = 90, angle2 = 45;
-    sscanf(buf, "angle1=%d&angle2=%d", &angle1, &angle2);
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK) {
+        char param[8];
+        if (httpd_query_key_value(query, "x", param, sizeof(param)) == ESP_OK) {
+            angle1 = atoi(param);
+        }
+        if (httpd_query_key_value(query, "y", param, sizeof(param)) == ESP_OK) {
+            angle2 = atoi(param);
+        }
+    }
 
-    if(angle1 < 0) angle1 = 0;
-    if(angle1 > 180) angle1 = 180;
-    if(angle2 < 0) angle2 = 0;
-    if(angle2 > 90) angle2 = 90;
+    // Apply to servos
+    current_angle1 = (angle1 < 0) ? 0 : (angle1 > max_angle1 ? max_angle1 : angle1);
+    current_angle2 = (angle2 < 0) ? 0 : (angle2 > max_angle2 ? max_angle2 : angle2);
 
-    set_servo(SERVO_PIN_1, angle1, 180);
-    set_servo(SERVO_PIN_2, angle2, 90);
+    set_servo(SERVO_PIN_1, current_angle1, max_angle1);
+    set_servo(SERVO_PIN_2, current_angle2, max_angle2);
 
-    const char* resp = "OK";
+    // Return JSON response
+    char resp[64];
+    snprintf(resp, sizeof(resp),
+             "{\"servo1\":%d,\"servo2\":%d,\"status\":\"ok\"}",
+             current_angle1, current_angle2);
+    httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, resp, strlen(resp));
+
     return ESP_OK;
 }
 
-void start_servo_server(void)
+void start_servo_server(httpd_handle_t server)
 {
-    httpd_handle_t server = NULL;
-    httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-    
     httpd_uri_t servo_uri = {
         .uri       = "/servo",
         .method    = HTTP_POST,
@@ -89,8 +101,7 @@ void start_servo_server(void)
         .user_ctx  = NULL
     };
 
-    if (httpd_start(&server, &config) == ESP_OK) {
-        httpd_register_uri_handler(server, &servo_uri);
-        ESP_LOGI("SERVO", "Servo control server started on port %d", config.server_port);
-    }
+    httpd_register_uri_handler(server, &servo_uri);
+    ESP_LOGI("SERVO", "Servo endpoint registered");
 }
+

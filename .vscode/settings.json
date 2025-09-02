@@ -18,5 +18,8 @@
     ],
     "idf.flashType": "UART",
     "idf.portWin": "COM3",
-    "C_Cpp.errorSquiggles": "disabled"
+    "C_Cpp.errorSquiggles": "disabled",
+    "files.associations": {
+        "esp_log.h": "c"
+    }
 }

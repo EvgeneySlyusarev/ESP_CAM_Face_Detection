@@ -11,7 +11,6 @@ bool read_config_from_sd(void)
 
     memset(wifiSSID, 0, sizeof(wifiSSID));
     memset(wifiPASS, 0, sizeof(wifiPASS));
-    memset(serverURI, 0, sizeof(serverURI));
 
     char line[256];
     while (fgets(line, sizeof(line), f)) {
@@ -25,19 +24,17 @@ bool read_config_from_sd(void)
             strncpy(wifiSSID, line + 10, sizeof(wifiSSID) - 1);
         } else if (strncmp(line, "WIFI_PASS=", 10) == 0) {
             strncpy(wifiPASS, line + 10, sizeof(wifiPASS) - 1);
-        } else if (strncmp(line, "SERVER_URI=", 11) == 0) {
-            strncpy(serverURI, line + 11, sizeof(serverURI) - 1);
-        }
+        } 
     }
 
     fclose(f);
     
-    if (strlen(wifiSSID) == 0 || strlen(wifiPASS) == 0 || strlen(serverURI) == 0) {
+    if (strlen(wifiSSID) == 0 || strlen(wifiPASS) == 0 ) {
         ESP_LOGE("CONFIG", "Missing required parameters in config");
         return false;
     }
     
-    ESP_LOGI("CONFIG", "Config loaded: SSID='%s', URI='%s'", wifiSSID, serverURI);
+    ESP_LOGI("CONFIG", "Config loaded: SSID='%s', URI='%s'", wifiSSID);
     return true;
 }
 
@@ -51,7 +48,7 @@ esp_err_t init_sd(void)
     // SDMMC slot config
     sdmmc_slot_config_t slot_config = SDMMC_SLOT_CONFIG_DEFAULT();
     slot_config.width = 1;   // ESP32-CAM поддерживает только 1-битный режим
-    // если нужно – можно указать конкретные GPIO, но для ESP32-CAM дефолтные правильные
+
 
     // FAT FS mount config
     esp_vfs_fat_sdmmc_mount_config_t mount_config = {
@@ -67,11 +64,7 @@ esp_err_t init_sd(void)
         return ret;
     }
 
-    // Вывести инфу о карте
     sdmmc_card_print_info(stdout, card);
-
-    // Авто-unmount при ресете (опционально)
-    // esp_register_shutdown_handler((shutdown_handler_t)esp_vfs_fat_sdcard_unmount);
 
     return ESP_OK;
 }

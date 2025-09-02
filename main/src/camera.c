@@ -1,6 +1,5 @@
 #include "camera.h"
 #include "common.h"
-#include "network.h"
 #include "esp_camera.h"
 
 // Пины камеры (AI Thinker)
@@ -21,7 +20,7 @@
 #define HREF_GPIO_NUM     23
 #define PCLK_GPIO_NUM     22
 
-QueueHandle_t cameraQueue;
+QueueHandle_t cameraQueue = NULL;
 
 esp_err_t camera_init(void)
 {
@@ -78,9 +77,10 @@ void camera_capture_task(void *pvParameters)
     const TickType_t xDelay = pdMS_TO_TICKS(200);
     uint32_t frame_counter = 0;
     uint32_t log_counter = 0;
-    
+
     while (1) {
         if (xEventGroupGetBits(wifi_event_group) & WIFI_CONNECTED_BIT) {
+            // Flash ON
             gpio_set_level(FLASH_GPIO_NUM, 1);
             vTaskDelay(pdMS_TO_TICKS(FLASH_DELAY_MS));
 
@@ -100,6 +100,7 @@ void camera_capture_task(void *pvParameters)
                 continue;
             }
 
+            // Allocate frame
             frame_t *frame = malloc(sizeof(frame_t));
             if (!frame) {
                 ESP_LOGE("CAMERA", "Failed to allocate frame memory");
@@ -120,9 +121,10 @@ void camera_capture_task(void *pvParameters)
             frame->len = fb->len;
             frame->frame_number = frame_counter++;
             memcpy(frame->data, fb->buf, fb->len);
-            
+
             total_frames_captured++;
 
+            // Check queue
             if (uxQueueMessagesWaiting(cameraQueue) >= QUEUE_SIZE - 1) {
                 ESP_LOGW("CAMERA", "Queue full, clearing old frames");
                 clear_camera_queue();
@@ -136,10 +138,10 @@ void camera_capture_task(void *pvParameters)
             }
 
             if (++log_counter % 10 == 0) {
-                ESP_LOGI("CAMERA", "Stats: Captured %u, Sent %u, Dropped %u",
-                        total_frames_captured, total_frames_sent, total_frames_dropped);
+                ESP_LOGI("CAMERA", "Stats: Captured %u, Dropped %u",
+                         total_frames_captured, total_frames_dropped);
             }
-            
+
             esp_camera_fb_return(fb);
         } else {
             if (log_counter % 20 == 0) {
@@ -147,35 +149,7 @@ void camera_capture_task(void *pvParameters)
             }
             log_counter++;
         }
-        
-        vTaskDelay(xDelay);
-    }
-}
 
-void camera_send_task(void *pvParameters)
-{
-    ESP_LOGI("CAMERA", "Send task started");
-    uint32_t log_counter = 0;
-    
-    while (1) {
-        frame_t *frame = NULL;
-        
-        if (xQueueReceive(cameraQueue, &frame, portMAX_DELAY) == pdTRUE) {
-            if (frame) {
-                if (xEventGroupGetBits(wifi_event_group) & WIFI_CONNECTED_BIT) {
-                    esp_err_t err = send_photo_http_with_retry(frame->data, frame->len);
-                    if (err == ESP_OK) {
-                        total_frames_sent++;
-                        if (++log_counter % 5 == 0) {
-                            ESP_LOGI("CAMERA", "Frame %u sent, size: %d bytes",
-                                    frame->frame_number, frame->len);
-                        }
-                    }
-                }
-                
-                free(frame->data);
-                free(frame);
-            }
-        }
+        vTaskDelay(xDelay);
     }
 }
