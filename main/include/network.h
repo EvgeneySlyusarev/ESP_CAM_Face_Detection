@@ -1,16 +1,22 @@
-#ifndef NETWORK_H
-#define NETWORK_H
+#ifndef CONFIG_H
+#define CONFIG_H
 
-#include "common.h"
+#include <stdbool.h>
+#include "esp_err.h"
 
-// Глобальный хэндл EventGroup уже объявлен в common.h
-// Бит успешного соединения
-extern const EventBits_t WIFI_CONNECTED_BIT;
 
-// Инициализация Wi-Fi
-void wifi_init(void);
+#define MAX_WIFI_ENTRIES 5
 
-// Функция отправки фото через HTTP
-esp_err_t send_photo_http(const uint8_t *image_data, size_t image_len);
+typedef struct {
+    char ssid[64];
+    char pass[64];
+} wifi_entry_t;
+
+extern wifi_entry_t wifi_entries[MAX_WIFI_ENTRIES];
+extern int wifi_entry_count;
+
+
+bool read_config_from_sd(void);
+esp_err_t init_sd(void);
 
 #endif

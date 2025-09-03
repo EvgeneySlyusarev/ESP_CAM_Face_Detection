@@ -6,14 +6,23 @@
 #include "webserver.h"
 #include "esp_log.h"
 #include "driver/gpio.h"
+#include "nvs_flash.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
-// Глобальные переменные
-char wifiSSID[64] = {0};
-char wifiPASS[64] = {0};
+
+// --- Глобальные переменные ---
 uint32_t total_frames_captured = 0;
 uint32_t total_frames_sent = 0;
 uint32_t total_frames_dropped = 0;
 
+EventGroupHandle_t wifi_event_group;
+const EventBits_t WIFI_CONNECTED_BIT = BIT0;
+
+char wifiSSID[64] = {0};
+char wifiPASS[64] = {0};
+
+// --- Точка входа ---
 void app_main(void)
 {
     ESP_LOGI("MAIN", "ESP32-CAM Streaming (modular version)");
@@ -27,7 +36,7 @@ void app_main(void)
     }
     ESP_ERROR_CHECK(ret);
 
-    // --- Network ---
+    // --- Network init ---
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
@@ -42,9 +51,27 @@ void app_main(void)
         return;
     }
 
-    // --- Wi-Fi ---
-    esp_netif_create_default_wifi_sta();
-    wifi_init();  // В обработчике got_ip_handler запускается mDNS
+    // --- Выбираем первый Wi-Fi из config ---
+    strncpy(wifiSSID, wifi_entries[0].ssid, sizeof(wifiSSID) - 1);
+    strncpy(wifiPASS, wifi_entries[0].pass, sizeof(wifiPASS) - 1);
+    ESP_LOGI("MAIN", "Connecting to SSID: %s", wifiSSID);
+
+    // --- Инициализация Wi-Fi через network.c ---
+    wifi_init();
+
+    // --- Ждём подключения к Wi-Fi (10 секунд) ---
+    EventBits_t bits = xEventGroupWaitBits(
+        wifi_event_group,
+        WIFI_CONNECTED_BIT,
+        pdFALSE,
+        pdTRUE,
+        pdMS_TO_TICKS(10000)
+    );
+
+    if (!(bits & WIFI_CONNECTED_BIT)) {
+        ESP_LOGE("MAIN", "Failed to connect to Wi-Fi");
+        return;
+    }
 
     // --- Camera ---
     if (camera_init() != ESP_OK) {
@@ -72,7 +99,7 @@ void app_main(void)
         return;
     }
 
-    // --- Start unified HTTP server (stream, servo, status) ---
+    // --- Start HTTP server ---
     start_webserver();
 
     ESP_LOGI("MAIN", "Application started successfully");
