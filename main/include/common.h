@@ -7,7 +7,6 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "freertos/event_groups.h"
 
@@ -23,30 +22,32 @@
 #include "sdmmc_cmd.h"
 #include "esp_vfs_fat.h"
 
-// --- Конфигурационные переменные (extern) ---
+// --- Конфигурационные переменные ---
 extern char wifiSSID[64];
 extern char wifiPASS[64];
-
 
 // --- Статистика ---
 extern uint32_t total_frames_captured;
 extern uint32_t total_frames_sent;
 extern uint32_t total_frames_dropped;
 
-// --- Структура для передачи кадров ---
+// --- Структура для кадров ---
 typedef struct { 
     uint8_t *data;
     size_t len;
     uint32_t frame_number;
 } frame_t;
 
-// --- GPIO определения ---
+// --- Глобальный буфер последнего кадра ---
+extern frame_t last_frame;              // единый объект
+extern SemaphoreHandle_t frame_mutex;   // мьютекс защиты доступа
+
+// --- GPIO ---
 #define FLASH_GPIO_NUM    4
 #define SERVO_PIN_1       12
 #define SERVO_PIN_2       13
 
 // --- Константы ---
-#define QUEUE_SIZE 10
 #define MAX_FRAME_SIZE (60 * 1024)
 #define FLASH_DELAY_MS 25
 #define CONFIG_FILE_PATH "/sdcard/config.txt"

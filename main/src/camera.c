@@ -20,7 +20,7 @@
 #define HREF_GPIO_NUM     23
 #define PCLK_GPIO_NUM     22
 
-QueueHandle_t cameraQueue = NULL;
+static const char *TAG = "CAMERA";
 
 esp_err_t camera_init(void)
 {
@@ -47,28 +47,42 @@ esp_err_t camera_init(void)
         .pixel_format   = PIXFORMAT_JPEG,
         .frame_size     = FRAMESIZE_SVGA,
         .jpeg_quality   = 12,
-        .fb_count       = 1,
-        .grab_mode      = CAMERA_GRAB_WHEN_EMPTY
+        .fb_count       = 2,
+        .grab_mode      = CAMERA_GRAB_LATEST
     };
 
     esp_err_t err = esp_camera_init(&config);
     if (err != ESP_OK) {
-        ESP_LOGE("CAMERA", "Camera initialization failed: 0x%x", err);
+        ESP_LOGE(TAG, "Camera initialization failed: 0x%x", err);
         return err;
     }
-    ESP_LOGI("CAMERA", "Camera initialized successfully");
+    ESP_LOGI(TAG, "Camera initialized successfully");
     return ESP_OK;
 }
 
-void clear_camera_queue(void)
+// Обновление глобального кадра
+void process_frame(const uint8_t *data, size_t len, uint32_t frame_number)
 {
-    frame_t *frame;
-    while (xQueueReceive(cameraQueue, &frame, 0) == pdTRUE) {
-        if (frame) {
-            free(frame->data);
-            free(frame);
-            total_frames_dropped++;
+    ESP_LOGI(TAG, "Processing frame %u (%u bytes)", frame_number, (unsigned)len);
+
+    if (xSemaphoreTake(frame_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+        // Освобождаем память старого кадра
+        if (last_frame.data) {
+            free(last_frame.data);
+            last_frame.data = NULL;
         }
+
+        // Копируем новый кадр
+        last_frame.data = malloc(len);
+        if (last_frame.data) {
+            memcpy(last_frame.data, data, len);
+            last_frame.len = len;
+            last_frame.frame_number = frame_number;
+        } else {
+            ESP_LOGE(TAG, "Failed to allocate memory for frame");
+        }
+
+        xSemaphoreGive(frame_mutex);
     }
 }
 
@@ -80,7 +94,7 @@ void camera_capture_task(void *pvParameters)
 
     while (1) {
         if (xEventGroupGetBits(wifi_event_group) & WIFI_CONNECTED_BIT) {
-            // Flash ON
+            // Включаем подсветку
             gpio_set_level(FLASH_GPIO_NUM, 1);
             vTaskDelay(pdMS_TO_TICKS(FLASH_DELAY_MS));
 
@@ -88,64 +102,28 @@ void camera_capture_task(void *pvParameters)
             gpio_set_level(FLASH_GPIO_NUM, 0);
 
             if (!fb) {
-                ESP_LOGE("CAMERA", "Camera capture failed");
+                ESP_LOGE(TAG, "Camera capture failed");
                 vTaskDelay(xDelay);
                 continue;
             }
 
-            if (fb->len > MAX_FRAME_SIZE) {
-                ESP_LOGW("CAMERA", "Frame too large (%d > %d), skipping", fb->len, MAX_FRAME_SIZE);
-                esp_camera_fb_return(fb);
-                vTaskDelay(xDelay);
-                continue;
-            }
-
-            // Allocate frame
-            frame_t *frame = malloc(sizeof(frame_t));
-            if (!frame) {
-                ESP_LOGE("CAMERA", "Failed to allocate frame memory");
-                esp_camera_fb_return(fb);
-                vTaskDelay(xDelay);
-                continue;
-            }
-
-            frame->data = malloc(fb->len);
-            if (!frame->data) {
-                ESP_LOGE("CAMERA", "Failed to allocate frame data");
-                free(frame);
-                esp_camera_fb_return(fb);
-                vTaskDelay(xDelay);
-                continue;
-            }
-
-            frame->len = fb->len;
-            frame->frame_number = frame_counter++;
-            memcpy(frame->data, fb->buf, fb->len);
-
+            // Статистика
             total_frames_captured++;
-
-            // Check queue
-            if (uxQueueMessagesWaiting(cameraQueue) >= QUEUE_SIZE - 1) {
-                ESP_LOGW("CAMERA", "Queue full, clearing old frames");
-                clear_camera_queue();
-            }
-
-            if (xQueueSend(cameraQueue, &frame, pdMS_TO_TICKS(50)) != pdTRUE) {
-                ESP_LOGW("CAMERA", "Failed to enqueue frame %u, dropped", frame->frame_number);
-                free(frame->data);
-                free(frame);
-                total_frames_dropped++;
-            }
+            frame_counter++;
 
             if (++log_counter % 10 == 0) {
-                ESP_LOGI("CAMERA", "Stats: Captured %u, Dropped %u",
+                ESP_LOGI(TAG, "Stats: Captured %u, Dropped %u",
                          total_frames_captured, total_frames_dropped);
             }
 
+            // Обновляем глобальный кадр
+            process_frame(fb->buf, fb->len, frame_counter);
+
+            // Вернуть буфер драйверу
             esp_camera_fb_return(fb);
         } else {
             if (log_counter % 20 == 0) {
-                ESP_LOGW("CAMERA", "Waiting for Wi-Fi connection...");
+                ESP_LOGW(TAG, "Waiting for Wi-Fi connection...");
             }
             log_counter++;
         }

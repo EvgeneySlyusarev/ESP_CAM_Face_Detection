@@ -22,7 +22,7 @@ bool read_config_from_sd(void)
 
     wifi_entry_count = 0;
     char line[256];
-    my_wifi_entry_t current = {0};  // <-- используем новый тип
+    my_wifi_entry_t current = {0};
 
     while (fgets(line, sizeof(line), f)) {
         line[strcspn(line, "\r\n")] = 0;  // убрать \n
@@ -33,7 +33,7 @@ bool read_config_from_sd(void)
 
         if (strncmp(line, "WIFI_SSID=", 10) == 0) {
             strncpy(current.ssid, line + 10, sizeof(current.ssid) - 1);
-            current.ssid[sizeof(current.ssid) - 1] = '\0';  // обязательно нуль-терминатор
+            current.ssid[sizeof(current.ssid) - 1] = '\0';
         } else if (strncmp(line, "WIFI_PASS=", 10) == 0) {
             strncpy(current.pass, line + 10, sizeof(current.pass) - 1);
             current.pass[sizeof(current.pass) - 1] = '\0';
