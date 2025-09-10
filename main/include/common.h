@@ -8,7 +8,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
-#include "freertos/event_groups.h"
+#include "freertos/event_groups.h"  // ← ДОБАВЬТЕ ЭТОТ INCLUDE
+#include "freertos/queue.h"
 
 #include "esp_log.h"
 #include "esp_err.h"
@@ -21,6 +22,9 @@
 #include "driver/sdmmc_defs.h"
 #include "sdmmc_cmd.h"
 #include "esp_vfs_fat.h"
+#include "esp_camera.h"
+
+#include "config.h"
 
 // --- Конфигурационные переменные ---
 extern char wifiSSID[64];
@@ -32,15 +36,16 @@ extern uint32_t total_frames_sent;
 extern uint32_t total_frames_dropped;
 
 // --- Структура для кадров ---
-typedef struct { 
-    uint8_t *data;
+typedef struct {
+    camera_fb_t *fb;  // указатель на fb
+    uint8_t *data;    // указатель на jpeg данные
     size_t len;
     uint32_t frame_number;
 } frame_t;
 
 // --- Глобальный буфер последнего кадра ---
-extern frame_t last_frame;              // единый объект
-extern SemaphoreHandle_t frame_mutex;   // мьютекс защиты доступа
+extern frame_t last_frame;
+extern SemaphoreHandle_t frame_mutex;
 
 // --- GPIO ---
 #define FLASH_GPIO_NUM    4
@@ -55,5 +60,13 @@ extern SemaphoreHandle_t frame_mutex;   // мьютекс защиты дост�
 // --- Wi-Fi Event Group ---
 extern EventGroupHandle_t wifi_event_group;  
 extern const EventBits_t WIFI_CONNECTED_BIT;
+
+// --- Многозадачность: Очередь для сервомоторов ---
+extern QueueHandle_t servo_queue;
+extern TaskHandle_t video_task_handle;
+extern TaskHandle_t servo_task_handle;
+extern int current_angle1;
+extern int current_angle2;
+extern SemaphoreHandle_t camera_mutex;
 
 #endif

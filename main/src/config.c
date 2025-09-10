@@ -8,9 +8,6 @@
 #include "common.h"
 #include "esp_log.h"
 
-// --- Глобальные переменные ---
-my_wifi_entry_t wifi_entries[MAX_WIFI_ENTRIES];
-int wifi_entry_count = 0;
 
 bool read_config_from_sd(void)
 {

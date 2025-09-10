@@ -12,6 +12,7 @@ typedef struct {
     char pass[64];
 } my_wifi_entry_t;
 
+// --- Конфигурация Wi-Fi ---
 extern my_wifi_entry_t wifi_entries[MAX_WIFI_ENTRIES];
 extern int wifi_entry_count;
 
