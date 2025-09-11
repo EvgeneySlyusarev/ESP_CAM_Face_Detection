@@ -1,7 +1,12 @@
 #include "camera.h"
 #include "common.h"
 #include "esp_camera.h"
+#include "driver/gpio.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "esp_log.h"
 
+// Конфигурация пинов камеры (оставляем как есть)
 #define PWDN_GPIO_NUM     32
 #define RESET_GPIO_NUM    -1
 #define XCLK_GPIO_NUM     0
@@ -21,8 +26,8 @@
 
 static const char *TAG = "CAMERA";
 
-
-esp_err_t camera_init(void)
+// Атрибут для выноса функции из IRAM
+esp_err_t __attribute__((section(".text.non_iram"))) camera_init(void)
 {
     camera_config_t config = {
         .pin_pwdn       = PWDN_GPIO_NUM,
@@ -41,14 +46,15 @@ esp_err_t camera_init(void)
         .pin_vsync      = VSYNC_GPIO_NUM,
         .pin_href       = HREF_GPIO_NUM,
         .pin_pclk       = PCLK_GPIO_NUM,
-        .xclk_freq_hz   = 20000000,
+        .xclk_freq_hz   = 10000000,      // ↓ Уменьшено с 20MHz до 10MHz
         .ledc_timer     = LEDC_TIMER_0,
         .ledc_channel   = LEDC_CHANNEL_0,
         .pixel_format   = PIXFORMAT_JPEG,
-        .frame_size     = FRAMESIZE_320X320,
-        .jpeg_quality   = 12,
-        .fb_count       = 2,
-        .grab_mode      = CAMERA_GRAB_LATEST
+        .frame_size     = FRAMESIZE_QVGA, // ↓ Уменьшено разрешение (320x240)
+        .jpeg_quality   = 14,             // ↑ Увеличено сжатие (меньше качества)
+        .fb_count       = 1,              // ↓ Только один буфер
+        .grab_mode      = CAMERA_GRAB_WHEN_EMPTY,
+        .fb_location    = CAMERA_FB_IN_PSRAM // Важно! Используем PSRAM
     };
 
     esp_err_t err = esp_camera_init(&config);
@@ -60,67 +66,77 @@ esp_err_t camera_init(void)
     return ESP_OK;
 }
 
-// Сохраняем кадр безопасно
-void process_frame(camera_fb_t *fb, uint32_t frame_number)
+// Функция обработки кадра вынесена из IRAM
+void __attribute__((section(".text.non_iram"))) process_frame(camera_fb_t *fb, uint32_t frame_number)
 {
     if (!fb) return;
 
-    ESP_LOGI(TAG, "Processing frame %u (%u bytes)", frame_number, (unsigned)fb->len);
-
-    // Возвращаем предыдущий fb драйверу
-    if (last_frame.fb) {
-        esp_camera_fb_return(last_frame.fb);
-        last_frame.fb = NULL;
+    // Минимальное логирование для экономии IRAM
+    if (frame_number % 10 == 0) {
+        ESP_LOGI(TAG, "Frame %u (%u bytes)", frame_number, (unsigned)fb->len);
     }
 
-    // Сохраняем новый fb
-    last_frame.fb = fb;
-    last_frame.data = fb->buf;
-    last_frame.len = fb->len;
-    last_frame.frame_number = frame_number;
+    // Захватываем мьютекс для безопасного доступа
+    if (xSemaphoreTake(frame_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        // Возвращаем предыдущий кадр
+        if (last_frame.fb) {
+            esp_camera_fb_return(last_frame.fb);
+        }
+
+        // Сохраняем новый кадр
+        last_frame.fb = fb;
+        last_frame.data = fb->buf;
+        last_frame.len = fb->len;
+        last_frame.frame_number = frame_number;
+
+        xSemaphoreGive(frame_mutex);
+    } else {
+        // Если не удалось захватить мьютекс, возвращаем кадр
+        esp_camera_fb_return(fb);
+    }
 }
 
-void camera_capture_task(void *pvParameters)
+// Задача захвата кадров вынесена из IRAM
+void __attribute__((section(".text.non_iram"))) camera_capture_task(void *pvParameters)
 {
-    const TickType_t frameDelay = pdMS_TO_TICKS(30); // ~33 FPS
+    const TickType_t frameDelay = pdMS_TO_TICKS(100); // ↓ Увеличена задержка (10 FPS)
     uint32_t frame_counter = 0;
     uint32_t log_counter = 0;
 
     while (1) {
+        // Проверяем подключение Wi-Fi
         if (xEventGroupGetBits(wifi_event_group) & WIFI_CONNECTED_BIT) {
 
             // Включаем подсветку
             gpio_set_level(FLASH_GPIO_NUM, 1);
-            vTaskDelay(pdMS_TO_TICKS(50)); // делаем паузу, чтобы глаз видел вспышку
+            vTaskDelay(pdMS_TO_TICKS(10)); // ↓ Уменьшена задержка вспышки
 
             // Снимаем кадр
             camera_fb_t *fb = esp_camera_fb_get();
+            gpio_set_level(FLASH_GPIO_NUM, 0); // Выключаем вспышку
 
             if (!fb) {
-                ESP_LOGE(TAG, "Camera capture failed");
-                gpio_set_level(FLASH_GPIO_NUM, 0); // выключаем вспышку даже при ошибке
                 total_frames_dropped++;
+                if (log_counter % 20 == 0) {
+                    ESP_LOGE(TAG, "Capture failed");
+                }
                 vTaskDelay(frameDelay);
                 continue;
             }
 
-            // Кадр снят — выключаем подсветку
-            gpio_set_level(FLASH_GPIO_NUM, 0);
-
             total_frames_captured++;
             frame_counter++;
 
-            if (++log_counter % 10 == 0) {
-                ESP_LOGI(TAG, "Stats: Captured %u, Dropped %u", total_frames_captured, total_frames_dropped);
+            // Минимальное логирование
+            if (++log_counter % 30 == 0) {
+                ESP_LOGI(TAG, "Stats: Cap %u, Drop %u", total_frames_captured, total_frames_dropped);
             }
-
-            ESP_LOGI(TAG, "Frame %u captured, size=%u bytes", frame_counter, (unsigned)fb->len);
 
             process_frame(fb, frame_counter);
 
         } else {
-            if (log_counter % 20 == 0) {
-                ESP_LOGW(TAG, "Waiting for Wi-Fi connection...");
+            if (log_counter % 50 == 0) {
+                ESP_LOGW(TAG, "Waiting for Wi-Fi...");
             }
             log_counter++;
         }
