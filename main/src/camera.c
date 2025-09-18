@@ -2,7 +2,7 @@
 #include "esp_camera.h"
 #include "esp_log.h"
 #include "driver/gpio.h"
-#include "common.h"  // если нужно для total_frames_captured и wifi_event_group
+#include "common.h" 
 
 static const char *TAG = "CAMERA";
 
@@ -53,9 +53,9 @@ esp_err_t camera_init(const camera_pins_t *pins)
         .ledc_timer     = LEDC_TIMER_0,
         .ledc_channel   = LEDC_CHANNEL_0,
         .pixel_format   = PIXFORMAT_JPEG,
-        .frame_size     = FRAMESIZE_SVGA,
+        .frame_size     = FRAMESIZE_VGA,
         .jpeg_quality   = 12,
-        .fb_count       = 1,
+        .fb_count       = 3,
         .grab_mode      = CAMERA_GRAB_WHEN_EMPTY
     };
 

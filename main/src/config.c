@@ -1,5 +1,9 @@
 #include "config.h"
 #include "common.h"
+#include "esp_log.h"
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
 
 bool read_config_from_sd(void)
 {
@@ -9,32 +13,33 @@ bool read_config_from_sd(void)
         return false;
     }
 
-    memset(wifiSSID, 0, sizeof(wifiSSID));
-    memset(wifiPASS, 0, sizeof(wifiPASS));
+    wifi_count = 0;
+    char line[128];
 
-    char line[256];
-    while (fgets(line, sizeof(line), f)) {
-        line[strcspn(line, "\r\n")] = 0;
-        
-        if (strlen(line) == 0 || line[0] == '#') {
-            continue;
-        }
+    while (fgets(line, sizeof(line), f) && wifi_count < MAX_WIFI) {
+        line[strcspn(line, "\r\n")] = 0; // remove newline
+        if (strlen(line) == 0 || line[0] == '#') continue;
 
         if (strncmp(line, "WIFI_SSID=", 10) == 0) {
-            strncpy(wifiSSID, line + 10, sizeof(wifiSSID) - 1);
+            strncpy(wifi_list[wifi_count].ssid, line + 10, SSID_MAX_LEN - 1);
         } else if (strncmp(line, "WIFI_PASS=", 10) == 0) {
-            strncpy(wifiPASS, line + 10, sizeof(wifiPASS) - 1);
-        } 
+            strncpy(wifi_list[wifi_count].pass, line + 10, PASS_MAX_LEN - 1);
+            wifi_count++; // добавили сеть после пароля
+        }
     }
 
     fclose(f);
-    
-    if (strlen(wifiSSID) == 0 || strlen(wifiPASS) == 0 ) {
-        ESP_LOGE("CONFIG", "Missing required parameters in config");
+
+    if (wifi_count == 0) {
+        ESP_LOGE("CONFIG", "No Wi-Fi networks found in config");
         return false;
     }
-    
-    ESP_LOGI("CONFIG", "Config loaded: SSID='%s', URI='%s'", wifiSSID);
+
+    ESP_LOGI("CONFIG", "Loaded %d Wi-Fi networks from SD", wifi_count);
+    for (int i = 0; i < wifi_count; i++) {
+        ESP_LOGI("CONFIG", "SSID[%d]: %s", i, wifi_list[i].ssid);
+    }
+
     return true;
 }
 
@@ -42,15 +47,10 @@ esp_err_t init_sd(void)
 {
     ESP_LOGI("CONFIG", "Initializing SD card (SDMMC 1-bit mode)...");
 
-    // SDMMC host
     sdmmc_host_t host = SDMMC_HOST_DEFAULT();
-
-    // SDMMC slot config
     sdmmc_slot_config_t slot_config = SDMMC_SLOT_CONFIG_DEFAULT();
-    slot_config.width = 1;   // ESP32-CAM поддерживает только 1-битный режим
+    slot_config.width = 1;  // ESP32-CAM поддерживает только 1-битный режим
 
-
-    // FAT FS mount config
     esp_vfs_fat_sdmmc_mount_config_t mount_config = {
         .format_if_mount_failed = false,
         .max_files = 3,
@@ -65,7 +65,5 @@ esp_err_t init_sd(void)
     }
 
     sdmmc_card_print_info(stdout, card);
-
     return ESP_OK;
 }
-

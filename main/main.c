@@ -34,7 +34,9 @@ void app_main(void)
     }
 
     esp_netif_create_default_wifi_sta();
-    wifi_init();
+
+    // --- Wi-Fi подключение ---
+    wifi_init(); 
 
     // --- Camera ---
     if (camera_init(NULL) != ESP_OK) {
@@ -59,9 +61,6 @@ void app_main(void)
     xTaskCreate(camera_capture_task, "camera_capture_task", 8192, NULL, 5, NULL);
     xTaskCreate(servo_task, "servo_task", 4096, NULL, 4, NULL);
     xTaskCreate(stream_task, "stream_task", 8192, NULL, 5, NULL);
-
-    // --- HTTP server ---
-    start_webserver();
 
     ESP_LOGI("MAIN", "Application started successfully");
 }
