@@ -15,7 +15,6 @@ httpd_handle_t server = NULL;
 // === MJPEG Stream Handler ===
 static esp_err_t stream_handler(httpd_req_t *req)
 {
-    camera_fb_t *fb = NULL;
     esp_err_t res = ESP_OK;
     char part_buf[64];
 
@@ -27,27 +26,37 @@ static esp_err_t stream_handler(httpd_req_t *req)
     if (res != ESP_OK) return res;
 
     while (true) {
-        fb = esp_camera_fb_get();
-        if (!fb) {
-            ESP_LOGE(TAG, "Camera capture failed");
-            res = ESP_FAIL;
-        } else {
-            size_t hlen = snprintf(part_buf, sizeof(part_buf), _STREAM_PART, fb->len);
+        frame_t *frame = NULL;
 
-            res = httpd_resp_send_chunk(req, _STREAM_BOUNDARY, strlen(_STREAM_BOUNDARY));
-            if (res == ESP_OK) res = httpd_resp_send_chunk(req, part_buf, hlen);
-            if (res == ESP_OK) res = httpd_resp_send_chunk(req, (const char *)fb->buf, fb->len);
-
-            esp_camera_fb_return(fb);
+        // Берём кадр из очереди (блокирующе, но с таймаутом)
+        if (xQueueReceive(cameraQueue, &frame, pdMS_TO_TICKS(500)) != pdTRUE) {
+            // Нет кадра в очереди, можно подождать или выйти
+            vTaskDelay(pdMS_TO_TICKS(10));
+            continue;
         }
 
+        if (!frame) continue; // на всякий случай
+
+        // Формируем заголовок части MJPEG
+        size_t hlen = snprintf(part_buf, sizeof(part_buf), _STREAM_PART, frame->len);
+
+        res = httpd_resp_send_chunk(req, _STREAM_BOUNDARY, strlen(_STREAM_BOUNDARY));
+        if (res == ESP_OK) res = httpd_resp_send_chunk(req, part_buf, hlen);
+        if (res == ESP_OK) res = httpd_resp_send_chunk(req, (const char *)frame->data, frame->len);
+
+        // Освобождаем память кадра после отправки
+        free(frame->data);
+        free(frame);
+
         if (res != ESP_OK) break;
-        // Optional: small delay to yield
+
+        // Optional: небольшой yield, чтобы другие задачи работали
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 
     return res;
 }
+
 
 // === Servo Control Handler (enqueue only) ===
 static esp_err_t servo_handler(httpd_req_t *req)

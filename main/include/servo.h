@@ -8,14 +8,6 @@
 #define SERVO_PIN_1 12
 #define SERVO_PIN_2 13
 
-typedef struct {
-    int angle1;
-    int angle2;
-} servo_cmd_t;
-
-extern QueueHandle_t servoQueue;
-
-
 void init_servo_pwm(void);
 void set_servo(int pin, int angle, int max_angle);
 void servo_task(void *pvParameters);

@@ -5,9 +5,6 @@
 #include "esp_event.h"
 #include "mdns.h"
 
-EventGroupHandle_t wifi_event_group;
-const EventBits_t WIFI_CONNECTED_BIT = BIT0;
-
 static const char *TAG = "NETWORK";
 
 // --- mDNS ---

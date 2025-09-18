@@ -1,13 +1,10 @@
 #include "servo.h"
 #include "driver/ledc.h"
 #include "esp_log.h"
+#include "common.h"
 
 static const char *TAG = "SERVO";
 
-QueueHandle_t servoQueue = NULL; // defined here
-
-static int current_angle1 = 90;
-static int current_angle2 = 45;
 static const int max_angle1 = 180;
 static const int max_angle2 = 90;
 

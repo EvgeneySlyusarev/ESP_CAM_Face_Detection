@@ -27,8 +27,6 @@ typedef struct {
     int flash_gpio;
 } camera_pins_t;
 
-// === Global queue for camera frames ===
-extern QueueHandle_t cameraQueue;
 
 // === Functions ===
 esp_err_t camera_init(const camera_pins_t *pins);  // Initialize camera with pins

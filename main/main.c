@@ -4,18 +4,15 @@
 #include "camera.h"
 #include "servo.h"
 #include "webserver.h"
+
 #include "esp_log.h"
 #include "driver/gpio.h"
 #include "nvs_flash.h"
 #include "esp_netif.h"
 #include "esp_event.h"
+#include "esp_wifi.h"
 
-// --- Global variables ---
-char wifiSSID[64] = {0};
-char wifiPASS[64] = {0};
-uint32_t total_frames_captured = 0;
-uint32_t total_frames_sent = 0;
-uint32_t total_frames_dropped = 0;
+
 
 void app_main(void)
 {

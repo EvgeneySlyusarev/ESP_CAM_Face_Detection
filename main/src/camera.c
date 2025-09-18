@@ -6,9 +6,6 @@
 
 static const char *TAG = "CAMERA";
 
-// === Global queue ===
-QueueHandle_t cameraQueue = NULL;
-
 // === Default pins for AI Thinker ESP32-CAM ===
 static camera_pins_t default_pins = {
     .pin_pwdn     = 32,
@@ -152,16 +149,11 @@ void camera_capture_task(void *pvParameters)
 
             total_frames_captured++;
 
-            if (uxQueueMessagesWaiting(cameraQueue) >= QUEUE_SIZE - 1) {
-                ESP_LOGW(TAG, "Queue full, clearing old frames");
-                clear_camera_queue();
-            }
-
             if (xQueueSend(cameraQueue, &frame, pdMS_TO_TICKS(50)) != pdTRUE) {
-                ESP_LOGW(TAG, "Failed to enqueue frame %u, dropped", frame->frame_number);
-                free(frame->data);
-                free(frame);
-                total_frames_dropped++;
+             // очередь полна, просто отбрасываем текущий кадр
+            free(frame->data);
+            free(frame);
+            total_frames_dropped++;
             }
 
             if (++log_counter % 10 == 0) {

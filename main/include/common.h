@@ -1,58 +1,78 @@
 #ifndef COMMON_H
 #define COMMON_H
 
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
+// Standard
+#include <stdint.h>
+#include <stddef.h>
+#include <stdbool.h>
 
+// FreeRTOS
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
-#include "freertos/semphr.h"
 #include "freertos/event_groups.h"
 
-#include "esp_log.h"
+// ESP-IDF common
 #include "esp_err.h"
-#include "esp_netif.h"
-#include "esp_wifi.h"
 #include "esp_event.h"
-#include "nvs_flash.h"
 
+// SD / FS (если используешь SD)
 #include "driver/sdmmc_host.h"
 #include "driver/sdmmc_defs.h"
 #include "sdmmc_cmd.h"
 #include "esp_vfs_fat.h"
 
-// --- Конфигурационные переменные (extern) ---
+// -----------------------------------------------------------------------------
+// Global configuration / shared variables (ONLY declarations - use extern here)
+// Actual definitions must be in a single .c file (e.g. globals.c)
+// -----------------------------------------------------------------------------
+
+// Wi-Fi credentials (filled from config)
 extern char wifiSSID[64];
 extern char wifiPASS[64];
 
+// Queues (создаются в app/main и определяются в globals.c)
+extern QueueHandle_t cameraQueue;
+extern QueueHandle_t servoQueue;
 
-// --- Статистика ---
-extern uint32_t total_frames_captured;
-extern uint32_t total_frames_sent;
-extern uint32_t total_frames_dropped;
+// Servo positions (shared state)
+extern volatile int current_angle1;
+extern volatile int current_angle2;
 
-// --- Структура для передачи кадров ---
-typedef struct { 
-    uint8_t *data;
-    size_t len;
-    uint32_t frame_number;
+// Statistics (использовать volatile если изменяются из разных тасков/ISR)
+extern volatile uint32_t total_frames_captured;
+extern volatile uint32_t total_frames_sent;
+extern volatile uint32_t total_frames_dropped;
+
+// Wi-Fi event group
+extern EventGroupHandle_t wifi_event_group;
+extern const EventBits_t WIFI_CONNECTED_BIT;
+
+// -----------------------------------------------------------------------------
+// Types
+// -----------------------------------------------------------------------------
+typedef struct {
+    uint8_t *data;        // pointer to JPEG buffer (heap)
+    size_t    len;        // length in bytes
+    uint32_t  frame_number;
 } frame_t;
 
-// --- GPIO определения ---
+// Servo command type (если используешь очередь команд серво)
+typedef struct {
+    int angle1;
+    int angle2;
+} servo_cmd_t;
+
+// -----------------------------------------------------------------------------
+// GPIO / constants
+// -----------------------------------------------------------------------------
 #define FLASH_GPIO_NUM    4
 #define SERVO_PIN_1       12
 #define SERVO_PIN_2       13
 
-// --- Константы ---
-#define QUEUE_SIZE 10
-#define MAX_FRAME_SIZE (60 * 1024)
-#define FLASH_DELAY_MS 25
-#define CONFIG_FILE_PATH "/sdcard/config.txt"
+#define QUEUE_SIZE        10
+#define MAX_FRAME_SIZE    (60 * 1024)   // максимальный размер кадра (байт)
+#define FLASH_DELAY_MS    25
+#define CONFIG_FILE_PATH  "/sdcard/config.txt"
 
-// --- Wi-Fi Event Group ---
-extern EventGroupHandle_t wifi_event_group;  
-extern const EventBits_t WIFI_CONNECTED_BIT;
-
-#endif
+#endif // COMMON_H
