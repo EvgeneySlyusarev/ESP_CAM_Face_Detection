@@ -4,15 +4,12 @@
 #include "camera.h"
 #include "servo.h"
 #include "webserver.h"
-
 #include "esp_log.h"
 #include "driver/gpio.h"
 #include "nvs_flash.h"
 #include "esp_netif.h"
 #include "esp_event.h"
 #include "esp_wifi.h"
-
-
 
 void app_main(void)
 {
@@ -31,23 +28,15 @@ void app_main(void)
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
-    // --- SD Card & Config ---
-    if (init_sd() != ESP_OK) {
-        ESP_LOGE("MAIN", "Failed to initialize SD card");
+    if (init_sd() != ESP_OK || !read_config_from_sd()) {
+        ESP_LOGE("MAIN", "Failed to initialize SD card or read config");
         return;
     }
 
-    if (!read_config_from_sd()) {
-        ESP_LOGE("MAIN", "Failed to read configuration");
-        return;
-    }
-
-    // --- Wi-Fi ---
     esp_netif_create_default_wifi_sta();
-    wifi_init();  // got_ip_handler запускает mDNS
+    wifi_init();
 
     // --- Camera ---
-    // Используем NULL, чтобы использовать дефолтные пины AI Thinker
     if (camera_init(NULL) != ESP_OK) {
         ESP_LOGE("MAIN", "Failed to initialize camera");
         return;
@@ -61,31 +50,17 @@ void app_main(void)
     // --- Servo PWM ---
     init_servo_pwm();
 
-    // --- Create Queues ---
+    // --- Queues ---
     cameraQueue = xQueueCreate(QUEUE_SIZE, sizeof(frame_t*));
-    if (!cameraQueue) {
-        ESP_LOGE("MAIN", "Failed to create camera queue");
-        return;
-    }
-
     servoQueue = xQueueCreate(10, sizeof(servo_cmd_t));
-    if (!servoQueue) {
-        ESP_LOGE("MAIN", "Failed to create servo queue");
-        return;
-    }
+    if (!cameraQueue || !servoQueue) return;
 
-    // --- Create Tasks ---
-    if (xTaskCreate(camera_capture_task, "camera_capture_task", 8192, NULL, 5, NULL) != pdPASS) {
-        ESP_LOGE("MAIN", "Failed to create camera capture task");
-        return;
-    }
+    // --- Tasks ---
+    xTaskCreate(camera_capture_task, "camera_capture_task", 8192, NULL, 5, NULL);
+    xTaskCreate(servo_task, "servo_task", 4096, NULL, 4, NULL);
+    xTaskCreate(stream_task, "stream_task", 8192, NULL, 5, NULL);
 
-    if (xTaskCreate(servo_task, "servo_task", 4096, NULL, 4, NULL) != pdPASS) {
-        ESP_LOGE("MAIN", "Failed to create servo task");
-        return;
-    }
-
-    // --- Start HTTP server ---
+    // --- HTTP server ---
     start_webserver();
 
     ESP_LOGI("MAIN", "Application started successfully");

@@ -94,10 +94,7 @@ void clear_camera_queue(void)
 // === Camera capture task ===
 void camera_capture_task(void *pvParameters)
 {
-    const TickType_t xDelay = pdMS_TO_TICKS(200);
-    uint32_t frame_counter = 0;
-    uint32_t log_counter = 0;
-
+    const TickType_t xDelay = pdMS_TO_TICKS(500);
     camera_pins_t *cfg = pvParameters ? (camera_pins_t *)pvParameters : &default_pins;
 
     gpio_reset_pin(cfg->flash_gpio);
@@ -144,31 +141,26 @@ void camera_capture_task(void *pvParameters)
             }
 
             frame->len = fb->len;
-            frame->frame_number = frame_counter++;
+            frame->frame_number = total_frames_captured + 1; // глобальный счётчик
             memcpy(frame->data, fb->buf, fb->len);
 
-            total_frames_captured++;
-
-            if (xQueueSend(cameraQueue, &frame, pdMS_TO_TICKS(50)) != pdTRUE) {
-             // очередь полна, просто отбрасываем текущий кадр
-            free(frame->data);
-            free(frame);
-            total_frames_dropped++;
-            }
-
-            if (++log_counter % 10 == 0) {
-                ESP_LOGI(TAG, "Stats: Captured %u, Dropped %u",
-                         total_frames_captured, total_frames_dropped);
-            }
-
             esp_camera_fb_return(fb);
-        } else {
-            if (log_counter % 20 == 0) {
-                ESP_LOGW(TAG, "Waiting for Wi-Fi connection...");
+
+            // Отправка кадра в очередь
+            if (xQueueSend(cameraQueue, &frame, 0) != pdPASS) {
+                ESP_LOGW(TAG, "Queue full, dropping frame");
+                total_frames_dropped++;
+                free(frame->data);
+                free(frame);
+            } else {
+                total_frames_captured++;
+                ESP_LOGI(TAG, "Frame %d captured, size: %d bytes", frame->frame_number, frame->len);
             }
-            log_counter++;
+        } else {
+            ESP_LOGW(TAG, "Waiting for Wi-Fi connection...");
         }
 
         vTaskDelay(xDelay);
     }
 }
+

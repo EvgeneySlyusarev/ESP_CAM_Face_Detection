@@ -22,6 +22,9 @@
 #include "sdmmc_cmd.h"
 #include "esp_vfs_fat.h"
 
+
+#include "esp_http_server.h"
+
 // -----------------------------------------------------------------------------
 // Global configuration / shared variables (ONLY declarations - use extern here)
 // Actual definitions must be in a single .c file (e.g. globals.c)
@@ -63,6 +66,12 @@ typedef struct {
     int angle2;
 } servo_cmd_t;
 
+// MJPEG client type (для stream_task)
+typedef struct {
+    httpd_req_t *req;
+    int connected;
+} mjpeg_client_t;
+
 // -----------------------------------------------------------------------------
 // GPIO / constants
 // -----------------------------------------------------------------------------
@@ -74,5 +83,10 @@ typedef struct {
 #define MAX_FRAME_SIZE    (60 * 1024)   // максимальный размер кадра (байт)
 #define FLASH_DELAY_MS    25
 #define CONFIG_FILE_PATH  "/sdcard/config.txt"
+
+// Tasks
+void camera_capture_task(void *arg);
+void servo_task(void *arg);
+void stream_task(void *arg);
 
 #endif // COMMON_H
