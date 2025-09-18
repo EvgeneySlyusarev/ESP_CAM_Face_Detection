@@ -1,46 +1,57 @@
 #include "camera.h"
-#include "common.h"
 #include "esp_camera.h"
+#include "esp_log.h"
+#include "driver/gpio.h"
+#include "common.h"  // если нужно для total_frames_captured и wifi_event_group
 
-// Пины камеры (AI Thinker)
-#define PWDN_GPIO_NUM     32
-#define RESET_GPIO_NUM    -1
-#define XCLK_GPIO_NUM     0
-#define SIOD_GPIO_NUM     26
-#define SIOC_GPIO_NUM     27
-#define Y9_GPIO_NUM       35
-#define Y8_GPIO_NUM       34
-#define Y7_GPIO_NUM       39
-#define Y6_GPIO_NUM       36
-#define Y5_GPIO_NUM       21
-#define Y4_GPIO_NUM       19
-#define Y3_GPIO_NUM       18
-#define Y2_GPIO_NUM       5
-#define VSYNC_GPIO_NUM    25
-#define HREF_GPIO_NUM     23
-#define PCLK_GPIO_NUM     22
+static const char *TAG = "CAMERA";
 
+// === Global queue ===
 QueueHandle_t cameraQueue = NULL;
 
-esp_err_t camera_init(void)
+// === Default pins for AI Thinker ESP32-CAM ===
+static camera_pins_t default_pins = {
+    .pin_pwdn     = 32,
+    .pin_reset    = -1,
+    .pin_xclk     = 0,
+    .pin_sccb_sda = 26,
+    .pin_sccb_scl = 27,
+    .pin_d7       = 35,
+    .pin_d6       = 34,
+    .pin_d5       = 39,
+    .pin_d4       = 36,
+    .pin_d3       = 21,
+    .pin_d2       = 19,
+    .pin_d1       = 18,
+    .pin_d0       = 5,
+    .pin_vsync    = 25,
+    .pin_href     = 23,
+    .pin_pclk     = 22,
+    .flash_gpio   = 4
+};
+
+// === Camera init function ===
+esp_err_t camera_init(const camera_pins_t *pins)
 {
+    const camera_pins_t *cfg = pins ? pins : &default_pins;
+
     camera_config_t config = {
-        .pin_pwdn       = PWDN_GPIO_NUM,
-        .pin_reset      = RESET_GPIO_NUM,
-        .pin_xclk       = XCLK_GPIO_NUM,
-        .pin_sccb_sda   = SIOD_GPIO_NUM,
-        .pin_sccb_scl   = SIOC_GPIO_NUM,
-        .pin_d7         = Y9_GPIO_NUM,
-        .pin_d6         = Y8_GPIO_NUM,
-        .pin_d5         = Y7_GPIO_NUM,
-        .pin_d4         = Y6_GPIO_NUM,
-        .pin_d3         = Y5_GPIO_NUM,
-        .pin_d2         = Y4_GPIO_NUM,
-        .pin_d1         = Y3_GPIO_NUM,
-        .pin_d0         = Y2_GPIO_NUM,
-        .pin_vsync      = VSYNC_GPIO_NUM,
-        .pin_href       = HREF_GPIO_NUM,
-        .pin_pclk       = PCLK_GPIO_NUM,
+        .pin_pwdn       = cfg->pin_pwdn,
+        .pin_reset      = cfg->pin_reset,
+        .pin_xclk       = cfg->pin_xclk,
+        .pin_sccb_sda   = cfg->pin_sccb_sda,
+        .pin_sccb_scl   = cfg->pin_sccb_scl,
+        .pin_d7         = cfg->pin_d7,
+        .pin_d6         = cfg->pin_d6,
+        .pin_d5         = cfg->pin_d5,
+        .pin_d4         = cfg->pin_d4,
+        .pin_d3         = cfg->pin_d3,
+        .pin_d2         = cfg->pin_d2,
+        .pin_d1         = cfg->pin_d1,
+        .pin_d0         = cfg->pin_d0,
+        .pin_vsync      = cfg->pin_vsync,
+        .pin_href       = cfg->pin_href,
+        .pin_pclk       = cfg->pin_pclk,
         .xclk_freq_hz   = 20000000,
         .ledc_timer     = LEDC_TIMER_0,
         .ledc_channel   = LEDC_CHANNEL_0,
@@ -53,13 +64,24 @@ esp_err_t camera_init(void)
 
     esp_err_t err = esp_camera_init(&config);
     if (err != ESP_OK) {
-        ESP_LOGE("CAMERA", "Camera initialization failed: 0x%x", err);
+        ESP_LOGE(TAG, "Camera initialization failed: 0x%x", err);
         return err;
     }
-    ESP_LOGI("CAMERA", "Camera initialized successfully");
+
+    // Создаём очередь кадров
+    if (!cameraQueue) {
+        cameraQueue = xQueueCreate(QUEUE_SIZE, sizeof(frame_t *));
+        if (!cameraQueue) {
+            ESP_LOGE(TAG, "Failed to create camera queue");
+            return ESP_FAIL;
+        }
+    }
+
+    ESP_LOGI(TAG, "Camera initialized successfully");
     return ESP_OK;
 }
 
+// === Clear frames in queue ===
 void clear_camera_queue(void)
 {
     frame_t *frame;
@@ -72,38 +94,44 @@ void clear_camera_queue(void)
     }
 }
 
+// === Camera capture task ===
 void camera_capture_task(void *pvParameters)
 {
     const TickType_t xDelay = pdMS_TO_TICKS(200);
     uint32_t frame_counter = 0;
     uint32_t log_counter = 0;
 
+    camera_pins_t *cfg = pvParameters ? (camera_pins_t *)pvParameters : &default_pins;
+
+    gpio_reset_pin(cfg->flash_gpio);
+    gpio_set_direction(cfg->flash_gpio, GPIO_MODE_OUTPUT);
+    gpio_set_level(cfg->flash_gpio, 0);
+
     while (1) {
         if (xEventGroupGetBits(wifi_event_group) & WIFI_CONNECTED_BIT) {
             // Flash ON
-            gpio_set_level(FLASH_GPIO_NUM, 1);
+            gpio_set_level(cfg->flash_gpio, 1);
             vTaskDelay(pdMS_TO_TICKS(FLASH_DELAY_MS));
 
             camera_fb_t *fb = esp_camera_fb_get();
-            gpio_set_level(FLASH_GPIO_NUM, 0);
+            gpio_set_level(cfg->flash_gpio, 0);
 
             if (!fb) {
-                ESP_LOGE("CAMERA", "Camera capture failed");
+                ESP_LOGE(TAG, "Camera capture failed");
                 vTaskDelay(xDelay);
                 continue;
             }
 
             if (fb->len > MAX_FRAME_SIZE) {
-                ESP_LOGW("CAMERA", "Frame too large (%d > %d), skipping", fb->len, MAX_FRAME_SIZE);
+                ESP_LOGW(TAG, "Frame too large (%d > %d), skipping", fb->len, MAX_FRAME_SIZE);
                 esp_camera_fb_return(fb);
                 vTaskDelay(xDelay);
                 continue;
             }
 
-            // Allocate frame
             frame_t *frame = malloc(sizeof(frame_t));
             if (!frame) {
-                ESP_LOGE("CAMERA", "Failed to allocate frame memory");
+                ESP_LOGE(TAG, "Failed to allocate frame memory");
                 esp_camera_fb_return(fb);
                 vTaskDelay(xDelay);
                 continue;
@@ -111,7 +139,7 @@ void camera_capture_task(void *pvParameters)
 
             frame->data = malloc(fb->len);
             if (!frame->data) {
-                ESP_LOGE("CAMERA", "Failed to allocate frame data");
+                ESP_LOGE(TAG, "Failed to allocate frame data");
                 free(frame);
                 esp_camera_fb_return(fb);
                 vTaskDelay(xDelay);
@@ -124,28 +152,27 @@ void camera_capture_task(void *pvParameters)
 
             total_frames_captured++;
 
-            // Check queue
             if (uxQueueMessagesWaiting(cameraQueue) >= QUEUE_SIZE - 1) {
-                ESP_LOGW("CAMERA", "Queue full, clearing old frames");
+                ESP_LOGW(TAG, "Queue full, clearing old frames");
                 clear_camera_queue();
             }
 
             if (xQueueSend(cameraQueue, &frame, pdMS_TO_TICKS(50)) != pdTRUE) {
-                ESP_LOGW("CAMERA", "Failed to enqueue frame %u, dropped", frame->frame_number);
+                ESP_LOGW(TAG, "Failed to enqueue frame %u, dropped", frame->frame_number);
                 free(frame->data);
                 free(frame);
                 total_frames_dropped++;
             }
 
             if (++log_counter % 10 == 0) {
-                ESP_LOGI("CAMERA", "Stats: Captured %u, Dropped %u",
+                ESP_LOGI(TAG, "Stats: Captured %u, Dropped %u",
                          total_frames_captured, total_frames_dropped);
             }
 
             esp_camera_fb_return(fb);
         } else {
             if (log_counter % 20 == 0) {
-                ESP_LOGW("CAMERA", "Waiting for Wi-Fi connection...");
+                ESP_LOGW(TAG, "Waiting for Wi-Fi connection...");
             }
             log_counter++;
         }

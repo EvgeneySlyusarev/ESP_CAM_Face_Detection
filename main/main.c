@@ -6,8 +6,11 @@
 #include "webserver.h"
 #include "esp_log.h"
 #include "driver/gpio.h"
+#include "nvs_flash.h"
+#include "esp_netif.h"
+#include "esp_event.h"
 
-// Глобальные переменные
+// --- Global variables ---
 char wifiSSID[64] = {0};
 char wifiPASS[64] = {0};
 uint32_t total_frames_captured = 0;
@@ -44,10 +47,11 @@ void app_main(void)
 
     // --- Wi-Fi ---
     esp_netif_create_default_wifi_sta();
-    wifi_init();  // В обработчике got_ip_handler запускается mDNS
+    wifi_init();  // got_ip_handler запускает mDNS
 
     // --- Camera ---
-    if (camera_init() != ESP_OK) {
+    // Используем NULL, чтобы использовать дефолтные пины AI Thinker
+    if (camera_init(NULL) != ESP_OK) {
         ESP_LOGE("MAIN", "Failed to initialize camera");
         return;
     }
@@ -57,22 +61,34 @@ void app_main(void)
     gpio_set_direction(FLASH_GPIO_NUM, GPIO_MODE_OUTPUT);
     gpio_set_level(FLASH_GPIO_NUM, 0);
 
-    // --- Servo ---
+    // --- Servo PWM ---
     init_servo_pwm();
 
-    // --- Camera Queue & Task ---
+    // --- Create Queues ---
     cameraQueue = xQueueCreate(QUEUE_SIZE, sizeof(frame_t*));
     if (!cameraQueue) {
         ESP_LOGE("MAIN", "Failed to create camera queue");
         return;
     }
 
-    if (xTaskCreate(camera_capture_task, "camera_capture_task", 15360, NULL, 5, NULL) != pdPASS) {
+    servoQueue = xQueueCreate(10, sizeof(servo_cmd_t));
+    if (!servoQueue) {
+        ESP_LOGE("MAIN", "Failed to create servo queue");
+        return;
+    }
+
+    // --- Create Tasks ---
+    if (xTaskCreate(camera_capture_task, "camera_capture_task", 8192, NULL, 5, NULL) != pdPASS) {
         ESP_LOGE("MAIN", "Failed to create camera capture task");
         return;
     }
 
-    // --- Start unified HTTP server (stream, servo, status) ---
+    if (xTaskCreate(servo_task, "servo_task", 4096, NULL, 4, NULL) != pdPASS) {
+        ESP_LOGE("MAIN", "Failed to create servo task");
+        return;
+    }
+
+    // --- Start HTTP server ---
     start_webserver();
 
     ESP_LOGI("MAIN", "Application started successfully");

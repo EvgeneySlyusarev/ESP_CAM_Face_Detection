@@ -1,13 +1,23 @@
 #ifndef SERVO_H
 #define SERVO_H
 
-#include "esp_http_server.h"  // здесь уже есть httpd_handle_t
+#include "esp_http_server.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
 
 #define SERVO_PIN_1 12
 #define SERVO_PIN_2 13
 
+typedef struct {
+    int angle1;
+    int angle2;
+} servo_cmd_t;
+
+extern QueueHandle_t servoQueue;
+
+
 void init_servo_pwm(void);
 void set_servo(int pin, int angle, int max_angle);
-void start_servo_server(httpd_handle_t server);  // используем тип из esp_http_server.h
+void servo_task(void *pvParameters);
 
 #endif
