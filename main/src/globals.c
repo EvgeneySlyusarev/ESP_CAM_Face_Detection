@@ -15,8 +15,14 @@ const EventBits_t WIFI_CONNECTED_BIT = BIT0;
 // MJPEG client
 mjpeg_client_t mjpeg_client = {0};
 
-QueueHandle_t cameraQueue = NULL;
 QueueHandle_t servoQueue = NULL;
 
 volatile int current_angle1 = 90;
 volatile int current_angle2 = 45;
+
+frame_t *current_frame = NULL;
+SemaphoreHandle_t frame_mutex = NULL;
+
+// Два отдельных сервера
+httpd_handle_t stream_server = NULL;
+httpd_handle_t control_server = NULL;

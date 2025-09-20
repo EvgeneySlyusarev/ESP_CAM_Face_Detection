@@ -30,7 +30,6 @@ extern wifi_cred_t wifi_list[MAX_WIFI];
 extern int wifi_count;
 
 // ---------------- Queues ----------------
-extern QueueHandle_t cameraQueue;
 extern QueueHandle_t servoQueue;
 
 // ---------------- Servo ----------------
@@ -49,9 +48,13 @@ typedef struct {
     uint32_t frame_number;
 } frame_t;
 
+extern frame_t *current_frame; 
+extern SemaphoreHandle_t frame_mutex;
+
 extern volatile uint32_t total_frames_captured;
 extern volatile uint32_t total_frames_sent;
 extern volatile uint32_t total_frames_dropped;
+
 
 // ---------------- MJPEG Client ----------------
 typedef struct {
@@ -71,10 +74,12 @@ extern const EventBits_t WIFI_CONNECTED_BIT;
 #define SERVO_PIN_2     13
 #define FLASH_DELAY_MS  25   
 
-#define QUEUE_SIZE      10
+#define QUEUE_SIZE      2
 #define MAX_FRAME_SIZE  (60 * 1024)
 #define CONFIG_FILE_PATH "/sdcard/config.txt"
 
+extern httpd_handle_t stream_server;
+extern httpd_handle_t control_server;
 // ---------------- Tasks ----------------
 void camera_capture_task(void *arg);
 void servo_task(void *arg);

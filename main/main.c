@@ -10,11 +10,16 @@
 #include "esp_netif.h"
 #include "esp_event.h"
 #include "esp_wifi.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/semphr.h"
+
+#define TAG "MAIN"
 
 void app_main(void)
 {
-    ESP_LOGI("MAIN", "ESP32-CAM Streaming (modular version)");
-    ESP_LOGI("MAIN", "Free heap: %d bytes", esp_get_free_heap_size());
+    ESP_LOGI(TAG, "ESP32-CAM Streaming (single-buffer version)");
+    ESP_LOGI(TAG, "Free heap: %d bytes", esp_get_free_heap_size());
 
     // --- NVS ---
     esp_err_t ret = nvs_flash_init();
@@ -29,18 +34,16 @@ void app_main(void)
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
     if (init_sd() != ESP_OK || !read_config_from_sd()) {
-        ESP_LOGE("MAIN", "Failed to initialize SD card or read config");
+        ESP_LOGE(TAG, "Failed to initialize SD card or read config");
         return;
     }
 
     esp_netif_create_default_wifi_sta();
-
-    // --- Wi-Fi подключение ---
     wifi_init(); 
 
     // --- Camera ---
     if (camera_init(NULL) != ESP_OK) {
-        ESP_LOGE("MAIN", "Failed to initialize camera");
+        ESP_LOGE(TAG, "Failed to initialize camera");
         return;
     }
 
@@ -52,15 +55,28 @@ void app_main(void)
     // --- Servo PWM ---
     init_servo_pwm();
 
-    // --- Queues ---
-    cameraQueue = xQueueCreate(QUEUE_SIZE, sizeof(frame_t*));
-    servoQueue = xQueueCreate(10, sizeof(servo_cmd_t));
-    if (!cameraQueue || !servoQueue) return;
+    // --- Mutex для кадра ---
+    frame_mutex = xSemaphoreCreateMutex();
+    if (!frame_mutex) {
+        ESP_LOGE(TAG, "Failed to create frame mutex");
+        return;
+    }
+
+    // --- Очередь для серво ---
+    servoQueue = xQueueCreate(1, sizeof(servo_cmd_t));
+    if (!servoQueue) {
+        ESP_LOGE(TAG, "Failed to create servo queue");
+        return;
+    }
+
+    // --- Start HTTP server ---
+    // port '81' stream, port `8080` control
+    start_webserver();  
 
     // --- Tasks ---
-    xTaskCreate(camera_capture_task, "camera_capture_task", 8192, NULL, 5, NULL);
-    xTaskCreate(servo_task, "servo_task", 4096, NULL, 4, NULL);
-    xTaskCreate(stream_task, "stream_task", 8192, NULL, 5, NULL);
+    xTaskCreate(camera_capture_task, "camera_capture_task", 8192, NULL, 3, NULL);
+    xTaskCreate(stream_task,         "stream_task",         8192, NULL, 4, NULL);
+    xTaskCreate(servo_task,          "servo_task",          4096, NULL, 5, NULL);
 
-    ESP_LOGI("MAIN", "Application started successfully");
+    ESP_LOGI(TAG, "Application started successfully");
 }

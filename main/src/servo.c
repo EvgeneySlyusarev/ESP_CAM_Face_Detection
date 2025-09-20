@@ -73,6 +73,9 @@ void servo_task(void *pvParameters)
 {
     servo_cmd_t cmd;
     ESP_LOGI(TAG, "Servo task started");
+
+    ESP_LOGI("TASK", "Started: %s, free stack=%d", pcTaskGetName(NULL), uxTaskGetStackHighWaterMark(NULL));
+    
     while (1) {
         if (xQueueReceive(servoQueue, &cmd, portMAX_DELAY) == pdTRUE) {
             // Clip and apply
