@@ -35,12 +35,12 @@ extern QueueHandle_t servoQueue;
 
 // ---------------- Servo ----------------
 typedef struct {
-    int angle1;
-    int angle2;
+    int angleX;
+    int angleY;
 } servo_cmd_t;
 
-extern volatile int current_angle1;
-extern volatile int current_angle2;
+extern volatile int current_angleX;
+extern volatile int current_angleY;
 
 // ---------------- Frames (double buffer) ----------------
 typedef struct {

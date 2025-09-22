@@ -5,11 +5,8 @@
 
 static const char *TAG = "SERVO";
 
-static const int max_angle1 = 180;
-static const int max_angle2 = 90;
-
-// Delay between steps for smooth movement (in ms)
-static const int step_delay_ms = 15;  
+static const int max_angleX = 180;
+static const int max_angleY = 90;
 
 void set_servo(int pin, int angle, int max_angle)
 {
@@ -22,21 +19,6 @@ void set_servo(int pin, int angle, int max_angle)
     uint32_t duty = (duty_us * (1 << 16)) / 20000; // 20ms period (50Hz)
     ledc_set_duty(LEDC_HIGH_SPEED_MODE, channel, duty);
     ledc_update_duty(LEDC_HIGH_SPEED_MODE, channel);
-}
-
-// smoothly move servo to target angle
-void move_servo_smooth(int pin, int *current_angle, int target_angle, int max_angle)
-{
-    if (target_angle < 0) target_angle = 0;
-    if (target_angle > max_angle) target_angle = max_angle;
-
-    while (*current_angle != target_angle) {
-        if (*current_angle < target_angle) (*current_angle)++;
-        else if (*current_angle > target_angle) (*current_angle)--;
-
-        set_servo(pin, *current_angle, max_angle);
-        vTaskDelay(pdMS_TO_TICKS(step_delay_ms)); //task delay
-    }
 }
 
 // Initialize PWM for servos
@@ -74,11 +56,10 @@ void init_servo_pwm()
     ledc_channel_config(&ledc_channel2);
 
    // Set initial positions
-    set_servo(SERVO_PIN_1, current_angle1, max_angle1);
-    set_servo(SERVO_PIN_2, current_angle2, max_angle2);
+    set_servo(SERVO_PIN_1, current_angleX, max_angleX);
+    set_servo(SERVO_PIN_2, current_angleY, max_angleY);
 }
 
-// Task to handle servo commands
 void servo_task(void *pvParameters)
 {
     servo_cmd_t cmd;
@@ -86,13 +67,15 @@ void servo_task(void *pvParameters)
 
     while (1) {
         if (xQueueReceive(servoQueue, &cmd, portMAX_DELAY) == pdTRUE) {
-            ESP_LOGI(TAG, "Target servo angles: %d, %d", cmd.angle1, cmd.angle2);
+            ESP_LOGI(TAG, "Received servo angles from WPF: %d, %d", cmd.angleX, cmd.angleY);
 
-            // Плавно доехать до новых углов
-            move_servo_smooth(SERVO_PIN_1, &current_angle1, cmd.angle1, max_angle1);
-            move_servo_smooth(SERVO_PIN_2, &current_angle2, cmd.angle2, max_angle2);
+            set_servo(SERVO_PIN_1, cmd.angleX, max_angleX);
+            current_angleX = cmd.angleX;
+            set_servo(SERVO_PIN_2, cmd.angleY, max_angleY);
+            current_angleY = cmd.angleY;
 
-            ESP_LOGI(TAG, "Applied servo angles: %d, %d", current_angle1, current_angle2);
+            ESP_LOGI(TAG, "Applied servo angles: %d, %d", current_angleX, current_angleY);
         }
     }
 }
+
