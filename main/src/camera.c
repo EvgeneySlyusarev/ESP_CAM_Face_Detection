@@ -96,7 +96,6 @@ void camera_capture_task(void *pvParameters)
             frame_buffer.fb[idx] = fb;
             frame_buffer.ready[idx] = true;
 
-            // Меняем индексы для следующего кадра
             frame_buffer.write_index ^= 1;
 
             total_frames_captured++;
