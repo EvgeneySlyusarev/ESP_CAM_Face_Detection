@@ -52,10 +52,10 @@ esp_err_t camera_init(const camera_pins_t *pins)
         .ledc_timer     = LEDC_TIMER_0,
         .ledc_channel   = LEDC_CHANNEL_0,
         .pixel_format   = PIXFORMAT_JPEG,
-        .frame_size     = FRAMESIZE_QVGA,
+        .frame_size     = FRAMESIZE_VGA,
         .jpeg_quality   = 12,
         .fb_count       = 2,
-        .grab_mode      = CAMERA_GRAB_WHEN_EMPTY
+        .grab_mode      = CAMERA_GRAB_LATEST
     };
 
     esp_err_t err = esp_camera_init(&config);
@@ -64,7 +64,7 @@ esp_err_t camera_init(const camera_pins_t *pins)
         return err;
     }
 
-    // Инициализация мьютекса
+    // Create mutex for frame access
     if (!frame_mutex) frame_mutex = xSemaphoreCreateMutex();
     if (!frame_mutex) return ESP_FAIL;
 
@@ -84,17 +84,17 @@ void camera_capture_task(void *pvParameters)
     
     while (1) {
         if (xEventGroupGetBits(wifi_event_group) & WIFI_CONNECTED_BIT) {
-            gpio_set_level(cfg->flash_gpio, 1);
-            vTaskDelay(pdMS_TO_TICKS(FLASH_DELAY_MS));
+            //gpio_set_level(cfg->flash_gpio, 1);
+            //vTaskDelay(pdMS_TO_TICKS(FLASH_DELAY_MS));
 
             camera_fb_t* fb = esp_camera_fb_get();
-            gpio_set_level(cfg->flash_gpio, 0);
-            if (!fb) { vTaskDelay(pdMS_TO_TICKS(250)); continue; }
+            //gpio_set_level(cfg->flash_gpio, 0);
+            if (!fb) { vTaskDelay(pdMS_TO_TICKS(75)); continue; }
 
             if (fb->len <= 0 || fb->len > MAX_FRAME_SIZE) {
                 esp_camera_fb_return(fb);
                 total_frames_dropped++;
-                vTaskDelay(pdMS_TO_TICKS(250));
+                vTaskDelay(pdMS_TO_TICKS(150));
                 continue;
             }
 
@@ -119,6 +119,6 @@ void camera_capture_task(void *pvParameters)
                 free(new_frame);
             }
         }
-        vTaskDelay(pdMS_TO_TICKS(250));
+        vTaskDelay(pdMS_TO_TICKS(150));
     }
 }

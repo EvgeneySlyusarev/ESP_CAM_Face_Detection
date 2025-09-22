@@ -20,20 +20,19 @@ void stream_task(void *pvParameters)
     uint32_t frame_number = 0;
 
     while (1) {
-        // Ждём Wi-Fi
+        // Wait for Wi-Fi connection
         if (!(xEventGroupGetBits(wifi_event_group) & WIFI_CONNECTED_BIT)) {
             ESP_LOGW("STREAM", "Wi-Fi disconnected, waiting...");
             vTaskDelay(pdMS_TO_TICKS(1000));
             continue;
         }
 
-        // Ждём подключение клиента
+        // Wait for a connected MJPEG client
         if (!mjpeg_client.connected || !mjpeg_client.req) {
             vTaskDelay(pdMS_TO_TICKS(200));
             continue;
         }
 
-        // Захватываем кадр
         if (xSemaphoreTake(frame_mutex, portMAX_DELAY) == pdTRUE) {
             if (current_frame && current_frame->len > 4) {
                 if (current_frame->data[0] == 0xFF && current_frame->data[1] == 0xD8 &&
@@ -161,7 +160,7 @@ void start_webserver(void)
         ESP_LOGE(TAG, "[STREAM] Failed to start server on port %d, err=0x%x", stream_config.server_port, res_stream);
     }
 
-    // Небольшая задержка между запуском серверов
+    // Small delay to ensure the first server starts properly
     vTaskDelay(pdMS_TO_TICKS(100));
 
     // --- Control Server ---

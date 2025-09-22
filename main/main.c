@@ -55,14 +55,14 @@ void app_main(void)
     // --- Servo PWM ---
     init_servo_pwm();
 
-    // --- Mutex для кадра ---
+    // --- Mutex for frame access ---
     frame_mutex = xSemaphoreCreateMutex();
     if (!frame_mutex) {
         ESP_LOGE(TAG, "Failed to create frame mutex");
         return;
     }
 
-    // --- Очередь для серво ---
+    // --- Servo command queue ---
     servoQueue = xQueueCreate(1, sizeof(servo_cmd_t));
     if (!servoQueue) {
         ESP_LOGE(TAG, "Failed to create servo queue");

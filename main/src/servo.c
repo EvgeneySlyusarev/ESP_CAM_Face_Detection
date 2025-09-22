@@ -8,25 +8,40 @@ static const char *TAG = "SERVO";
 static const int max_angle1 = 180;
 static const int max_angle2 = 90;
 
+// Delay between steps for smooth movement (in ms)
+static const int step_delay_ms = 15;  
+
 void set_servo(int pin, int angle, int max_angle)
 {
-    // Ensure bounds
     if (angle < 0) angle = 0;
     if (angle > max_angle) angle = max_angle;
 
-    // Convert angle to pulse width (microseconds)
     int duty_us = 500 + (angle * (2500 - 500) / max_angle);
     int channel = (pin == SERVO_PIN_1 ? LEDC_CHANNEL_0 : LEDC_CHANNEL_1);
 
-    // Convert microseconds to duty for LEDC_TIMER_16_BIT and 20ms period
-    uint32_t duty = (duty_us * (1 << 16)) / 20000;
+    uint32_t duty = (duty_us * (1 << 16)) / 20000; // 20ms period (50Hz)
     ledc_set_duty(LEDC_HIGH_SPEED_MODE, channel, duty);
     ledc_update_duty(LEDC_HIGH_SPEED_MODE, channel);
 }
 
+// smoothly move servo to target angle
+void move_servo_smooth(int pin, int *current_angle, int target_angle, int max_angle)
+{
+    if (target_angle < 0) target_angle = 0;
+    if (target_angle > max_angle) target_angle = max_angle;
+
+    while (*current_angle != target_angle) {
+        if (*current_angle < target_angle) (*current_angle)++;
+        else if (*current_angle > target_angle) (*current_angle)--;
+
+        set_servo(pin, *current_angle, max_angle);
+        vTaskDelay(pdMS_TO_TICKS(step_delay_ms)); //task delay
+    }
+}
+
+// Initialize PWM for servos
 void init_servo_pwm()
 {
-    // Configure timer
     ledc_timer_config_t ledc_timer = {
         .speed_mode       = LEDC_HIGH_SPEED_MODE,
         .duty_resolution  = LEDC_TIMER_16_BIT,
@@ -36,7 +51,6 @@ void init_servo_pwm()
     };
     ledc_timer_config(&ledc_timer);
 
-    // Channel 1
     ledc_channel_config_t ledc_channel1 = {
         .gpio_num       = SERVO_PIN_1,
         .speed_mode     = LEDC_HIGH_SPEED_MODE,
@@ -48,7 +62,6 @@ void init_servo_pwm()
     };
     ledc_channel_config(&ledc_channel1);
 
-    // Channel 2
     ledc_channel_config_t ledc_channel2 = {
         .gpio_num       = SERVO_PIN_2,
         .speed_mode     = LEDC_HIGH_SPEED_MODE,
@@ -60,35 +73,24 @@ void init_servo_pwm()
     };
     ledc_channel_config(&ledc_channel2);
 
-    // Set initial positions
+   // Set initial positions
     set_servo(SERVO_PIN_1, current_angle1, max_angle1);
     set_servo(SERVO_PIN_2, current_angle2, max_angle2);
 }
 
-/*
- * ServoTask:
- * Waits on servoQueue for servo_cmd_t items and applies them.
- */
+// Task to handle servo commands
 void servo_task(void *pvParameters)
 {
     servo_cmd_t cmd;
     ESP_LOGI(TAG, "Servo task started");
 
-    ESP_LOGI("TASK", "Started: %s, free stack=%d", pcTaskGetName(NULL), uxTaskGetStackHighWaterMark(NULL));
-    
     while (1) {
         if (xQueueReceive(servoQueue, &cmd, portMAX_DELAY) == pdTRUE) {
-            // Clip and apply
-            if (cmd.angle1 < 0) cmd.angle1 = 0;
-            if (cmd.angle1 > max_angle1) cmd.angle1 = max_angle1;
-            if (cmd.angle2 < 0) cmd.angle2 = 0;
-            if (cmd.angle2 > max_angle2) cmd.angle2 = max_angle2;
+            ESP_LOGI(TAG, "Target servo angles: %d, %d", cmd.angle1, cmd.angle2);
 
-            current_angle1 = cmd.angle1;
-            current_angle2 = cmd.angle2;
-
-            set_servo(SERVO_PIN_1, current_angle1, max_angle1);
-            set_servo(SERVO_PIN_2, current_angle2, max_angle2);
+            // Плавно доехать до новых углов
+            move_servo_smooth(SERVO_PIN_1, &current_angle1, cmd.angle1, max_angle1);
+            move_servo_smooth(SERVO_PIN_2, &current_angle2, cmd.angle2, max_angle2);
 
             ESP_LOGI(TAG, "Applied servo angles: %d, %d", current_angle1, current_angle2);
         }
