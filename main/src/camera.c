@@ -64,10 +64,6 @@ esp_err_t camera_init(const camera_pins_t *pins)
         return err;
     }
 
-    // Create mutex for frame access
-    if (!frame_mutex) frame_mutex = xSemaphoreCreateMutex();
-    if (!frame_mutex) return ESP_FAIL;
-
     ESP_LOGI(TAG, "Camera initialized successfully");
     return ESP_OK;
 }
@@ -80,45 +76,31 @@ void camera_capture_task(void *pvParameters)
     gpio_set_direction(cfg->flash_gpio, GPIO_MODE_OUTPUT);
     gpio_set_level(cfg->flash_gpio, 0);
 
-    ESP_LOGI("TASK", "Started: %s, free stack=%d", pcTaskGetName(NULL), uxTaskGetStackHighWaterMark(NULL));
-    
+    ESP_LOGI(TAG, "Camera capture task started: %s", pcTaskGetName(NULL));
+
     while (1) {
         if (xEventGroupGetBits(wifi_event_group) & WIFI_CONNECTED_BIT) {
-            //gpio_set_level(cfg->flash_gpio, 1);
-            //vTaskDelay(pdMS_TO_TICKS(FLASH_DELAY_MS));
-
             camera_fb_t* fb = esp_camera_fb_get();
-            //gpio_set_level(cfg->flash_gpio, 0);
-            if (!fb) { vTaskDelay(pdMS_TO_TICKS(75)); continue; }
-
-            if (fb->len <= 0 || fb->len > MAX_FRAME_SIZE) {
-                esp_camera_fb_return(fb);
-                total_frames_dropped++;
-                vTaskDelay(pdMS_TO_TICKS(150));
+            if (!fb) {
+                ESP_LOGW(TAG, "Frame grab failed");
+                vTaskDelay(pdMS_TO_TICKS(10));
                 continue;
             }
 
-            frame_t* new_frame = malloc(sizeof(frame_t));
-            new_frame->data = malloc(fb->len);
-            memcpy(new_frame->data, fb->buf, fb->len);
-            new_frame->len = fb->len;
-            new_frame->frame_number = total_frames_captured + 1;
-            esp_camera_fb_return(fb);
+            int idx = frame_buffer.write_index;
 
-            if (xSemaphoreTake(frame_mutex, 10) == pdTRUE) {
-                if (current_frame) {
-                    free(current_frame->data);
-                    free(current_frame);
-                    total_frames_dropped++;
-                }
-                current_frame = new_frame;
-                total_frames_captured++;
-                xSemaphoreGive(frame_mutex);
-            } else {
-                free(new_frame->data);
-                free(new_frame);
+        if (frame_buffer.ready[idx] && frame_buffer.fb[idx]) {
+            esp_camera_fb_return(frame_buffer.fb[idx]);
             }
+
+            frame_buffer.fb[idx] = fb;
+            frame_buffer.ready[idx] = true;
+
+            // Меняем индексы для следующего кадра
+            frame_buffer.write_index ^= 1;
+
+            total_frames_captured++;
         }
-        vTaskDelay(pdMS_TO_TICKS(150));
+        vTaskDelay(pdMS_TO_TICKS(5));
     }
 }

@@ -15,6 +15,7 @@
 #include "sdmmc_cmd.h"
 #include "esp_vfs_fat.h"
 #include "esp_http_server.h"
+#include "esp_camera.h"
 
 // ---------------- Wi-Fi ----------------
 #define MAX_WIFI        5
@@ -41,20 +42,19 @@ typedef struct {
 extern volatile int current_angle1;
 extern volatile int current_angle2;
 
-// ---------------- Frames ----------------
+// ---------------- Frames (double buffer) ----------------
 typedef struct {
-    uint8_t *data;
-    size_t len;
-    uint32_t frame_number;
-} frame_t;
+    camera_fb_t *fb[2];   // два буфера
+    int write_index;      // индекс записи
+    int read_index;       // индекс чтения
+    bool ready[2];        // готовность кадра
+} frame_double_buffer_t;
 
-extern frame_t *current_frame; 
-extern SemaphoreHandle_t frame_mutex;
+extern frame_double_buffer_t frame_buffer;
 
 extern volatile uint32_t total_frames_captured;
 extern volatile uint32_t total_frames_sent;
 extern volatile uint32_t total_frames_dropped;
-
 
 // ---------------- MJPEG Client ----------------
 typedef struct {
@@ -80,6 +80,7 @@ extern const EventBits_t WIFI_CONNECTED_BIT;
 
 extern httpd_handle_t stream_server;
 extern httpd_handle_t control_server;
+
 // ---------------- Tasks ----------------
 void camera_capture_task(void *arg);
 void servo_task(void *arg);

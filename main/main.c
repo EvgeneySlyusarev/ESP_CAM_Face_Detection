@@ -12,13 +12,12 @@
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "freertos/semphr.h"
 
 #define TAG "MAIN"
 
 void app_main(void)
 {
-    ESP_LOGI(TAG, "ESP32-CAM Streaming (single-buffer version)");
+    ESP_LOGI(TAG, "ESP32-CAM Streaming (double-buffer version)");
     ESP_LOGI(TAG, "Free heap: %d bytes", esp_get_free_heap_size());
 
     // --- NVS ---
@@ -55,13 +54,6 @@ void app_main(void)
     // --- Servo PWM ---
     init_servo_pwm();
 
-    // --- Mutex for frame access ---
-    frame_mutex = xSemaphoreCreateMutex();
-    if (!frame_mutex) {
-        ESP_LOGE(TAG, "Failed to create frame mutex");
-        return;
-    }
-
     // --- Servo command queue ---
     servoQueue = xQueueCreate(1, sizeof(servo_cmd_t));
     if (!servoQueue) {
@@ -70,7 +62,6 @@ void app_main(void)
     }
 
     // --- Start HTTP server ---
-    // port '81' stream, port `8080` control
     start_webserver();  
 
     // --- Tasks ---

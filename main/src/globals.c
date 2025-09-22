@@ -12,16 +12,22 @@ volatile uint32_t total_frames_dropped = 0;
 
 EventGroupHandle_t wifi_event_group = NULL;
 const EventBits_t WIFI_CONNECTED_BIT = BIT0;
+
 // MJPEG client
 mjpeg_client_t mjpeg_client = {0};
 
+// Servo queue and positions
 QueueHandle_t servoQueue = NULL;
-
 volatile int current_angle1 = 90;
 volatile int current_angle2 = 45;
 
-frame_t *current_frame = NULL;
-SemaphoreHandle_t frame_mutex = NULL;
+// Двойной буфер для кадров камеры
+frame_double_buffer_t frame_buffer = {
+    .fb = { NULL, NULL },
+    .write_index = 0,
+    .read_index  = 1,
+    .ready = { false, false }
+};
 
 // HTTP server handles
 httpd_handle_t stream_server = NULL;

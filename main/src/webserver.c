@@ -20,47 +20,54 @@ void stream_task(void *pvParameters)
     uint32_t frame_number = 0;
 
     while (1) {
-        // Wait for Wi-Fi connection
+        // Ждём Wi-Fi
         if (!(xEventGroupGetBits(wifi_event_group) & WIFI_CONNECTED_BIT)) {
-            ESP_LOGW("STREAM", "Wi-Fi disconnected, waiting...");
             vTaskDelay(pdMS_TO_TICKS(1000));
             continue;
         }
 
-        // Wait for a connected MJPEG client
+        // Ждём подключённого MJPEG клиента
         if (!mjpeg_client.connected || !mjpeg_client.req) {
             vTaskDelay(pdMS_TO_TICKS(200));
             continue;
         }
 
-        if (xSemaphoreTake(frame_mutex, portMAX_DELAY) == pdTRUE) {
-            if (current_frame && current_frame->len > 4) {
-                if (current_frame->data[0] == 0xFF && current_frame->data[1] == 0xD8 &&
-                    current_frame->data[current_frame->len-2] == 0xFF &&
-                    current_frame->data[current_frame->len-1] == 0xD9) {
+        int idx = frame_buffer.read_index;
 
-                    int hlen = snprintf(part_buf, sizeof(part_buf), _STREAM_PART, current_frame->len);
-                    esp_err_t res1 = httpd_resp_send_chunk(mjpeg_client.req, _STREAM_BOUNDARY, strlen(_STREAM_BOUNDARY));
-                    esp_err_t res2 = httpd_resp_send_chunk(mjpeg_client.req, part_buf, hlen);
-                    esp_err_t res3 = httpd_resp_send_chunk(mjpeg_client.req, (const char*)current_frame->data, current_frame->len);
+        // Если кадр готов
+        if (frame_buffer.ready[idx] && frame_buffer.fb[idx]) {
+            camera_fb_t *fb = frame_buffer.fb[idx];
 
-                    if (res1 == ESP_OK && res2 == ESP_OK && res3 == ESP_OK) {
-                        total_frames_sent++;
-                        frame_number++;
-                        ESP_LOGI("STREAM", "Frame #%u sent, size=%u bytes", frame_number, current_frame->len);
-                    } else {
-                        ESP_LOGW("STREAM", "Client disconnected, resetting");
-                        mjpeg_client.connected = 0;
-                        mjpeg_client.req = NULL;
-                    }
+            // Проверка JPEG
+            if (fb->len > 4 && fb->buf[0] == 0xFF && fb->buf[1] == 0xD8 &&
+                fb->buf[fb->len-2] == 0xFF && fb->buf[fb->len-1] == 0xD9) {
+
+                int hlen = snprintf(part_buf, sizeof(part_buf), _STREAM_PART, fb->len);
+
+                // Отправка данных клиенту
+                if (httpd_resp_send_chunk(mjpeg_client.req, _STREAM_BOUNDARY, strlen(_STREAM_BOUNDARY)) != ESP_OK ||
+                    httpd_resp_send_chunk(mjpeg_client.req, part_buf, hlen) != ESP_OK ||
+                    httpd_resp_send_chunk(mjpeg_client.req, (const char*)fb->buf, fb->len) != ESP_OK) {
+                    
+                    ESP_LOGW("STREAM", "Client disconnected, resetting");
+                    mjpeg_client.connected = 0;
+                    mjpeg_client.req = NULL;
+                } else {
+                    total_frames_sent++;
+                    frame_number++;
+                    ESP_LOGI("STREAM", "Frame #%u sent, size=%u bytes", frame_number, fb->len);
                 }
-
-                free(current_frame->data);
-                free(current_frame);
-                current_frame = NULL;
             }
-            xSemaphoreGive(frame_mutex);
+
+            // Возвращаем буфер обратно в пул камеры
+            esp_camera_fb_return(fb);
+            frame_buffer.fb[idx] = NULL;
+            frame_buffer.ready[idx] = false;
+
+            // Переключаем индекс чтения
+            frame_buffer.read_index ^= 1;
         }
+
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
