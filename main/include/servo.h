@@ -9,7 +9,8 @@
 #define SERVO_PIN_2 13
 
 void init_servo_pwm(void);
-void set_servo(int pin, int angle, int max_angle);
 void servo_task(void *pvParameters);
+void set_servo(int pin, int angle, int max_angle);
+void start_servo_server(httpd_handle_t server);
 
 #endif

@@ -6,6 +6,6 @@
 #include "esp_wifi.h"
 #include <stdbool.h>
 
-void wifi_init(void);
+esp_err_t wifi_init(void);
 
-#endif // NETWORK_H
+#endif

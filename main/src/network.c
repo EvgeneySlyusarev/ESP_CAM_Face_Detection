@@ -3,13 +3,10 @@
 #include "esp_wifi.h"
 #include "esp_netif.h"
 #include "esp_event.h"
-#include "mdns.h"
 #include "esp_log.h"
 #include <string.h>
 
 static const char *TAG = "NETWORK";
-
-static esp_netif_t *sta_netif = NULL;
 
 static void wifi_event_handler(void *arg, esp_event_base_t event_base,
                                int32_t event_id, void *event_data)
@@ -28,7 +25,6 @@ static void got_ip_handler(void *arg, esp_event_base_t event_base,
         const ip_event_got_ip_t* event = (const ip_event_got_ip_t*) event_data;
         ESP_LOGI(TAG, "Wi-Fi connected, IP: " IPSTR, IP2STR(&event->ip_info.ip));
         xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_BIT);
-        start_mdns_service("esp32cam");
     }
 }
 
@@ -73,7 +69,7 @@ esp_err_t wifi_init(void)
 
         if (bits & WIFI_CONNECTED_BIT) {
             ESP_LOGI(TAG, "Connected to %s", wifi_list[i].ssid);
-            return; // Подключились, выходим
+            return ESP_OK;  // <-- возвращаем успешный код
         } else {
             ESP_LOGW(TAG, "Failed to connect to %s, trying next...", wifi_list[i].ssid);
             ESP_ERROR_CHECK(esp_wifi_stop());
@@ -81,4 +77,6 @@ esp_err_t wifi_init(void)
     }
 
     ESP_LOGE(TAG, "Could not connect to any configured Wi-Fi network");
+    return ESP_FAIL; // <-- возвращаем ошибку, если не удалось подключиться
 }
+

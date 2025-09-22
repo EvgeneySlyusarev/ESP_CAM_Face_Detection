@@ -105,19 +105,19 @@ static esp_err_t servo_handler(httpd_req_t *req)
     if (ret < 0) buf[0] = 0;
     buf[ret] = 0;
 
-    int angle1 = 90, angle2 = 45;
+    int angleX = 90, angleY = 45;
     char *p;
-    if ((p = strstr(buf, "angle1="))) angle1 = atoi(p+7);
-    if ((p = strstr(buf, "angle2="))) angle2 = atoi(p+7);
+    if ((p = strstr(buf, "angleX="))) angleX = atoi(p+7);
+    if ((p = strstr(buf, "angleY="))) angleY = atoi(p+7);
 
-    ESP_LOGI("SERVO", "Received servo command: angle1=%d, angle2=%d", angle1, angle2);
+    ESP_LOGI("SERVO", "Received servo command: angleX=%d, angleY=%d", angleX, angleY);
 
-    if (angle1 < 0) angle1 = 0; 
-    if (angle1 > 180) angle1 = 180;
-    if (angle2 < 0) angle2 = 0;
-    if (angle2 > 90) angle2 = 90;
+    if (angleX < 0) angleX = 0; 
+    if (angleX > 180) angleX = 180;
+    if (angleY < 0) angleY = 0;
+    if (angleY > 90) angleY = 90;
 
-    servo_cmd_t cmd = { angle1, angle2 };
+    servo_cmd_t cmd = { angleX, angleY };
     if (xQueueSend(servoQueue, &cmd, 0) != pdTRUE) {
         httpd_resp_set_status(req, "503 Service Unavailable");
         httpd_resp_sendstr(req, "{\"status\":\"queue_full\"}");
@@ -125,7 +125,7 @@ static esp_err_t servo_handler(httpd_req_t *req)
     }
 
     char resp[80];
-    snprintf(resp, sizeof(resp), "{\"servo1\":%d,\"servo2\":%d,\"status\":\"queued\"}", angle1, angle2);
+    snprintf(resp, sizeof(resp), "{\"servoX\":%d,\"servoY\":%d,\"status\":\"queued\"}", angleX, angleY);
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, resp, strlen(resp));
     return ESP_OK;
@@ -187,4 +187,3 @@ void start_webserver(void)
         ESP_LOGE(TAG, "[CONTROL] Failed to start server on port %d, err=0x%x", control_config.server_port, res_control);
     }
 }
-

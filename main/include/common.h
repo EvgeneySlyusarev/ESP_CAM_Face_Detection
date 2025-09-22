@@ -69,12 +69,9 @@ extern EventGroupHandle_t wifi_event_group;
 extern const EventBits_t WIFI_CONNECTED_BIT;
 
 // --- Многозадачность: Очередь для сервомоторов ---
-extern QueueHandle_t servo_queue;
-extern TaskHandle_t video_task_handle;
-extern TaskHandle_t servo_task_handle;
-extern int current_angle1;
-extern int current_angle2;
-extern SemaphoreHandle_t camera_mutex;
+extern QueueHandle_t servoQueue;
+extern volatile int current_angleX;
+extern volatile int current_angleY;
 
 // ---------------- GPIO ----------------
 #define FLASH_GPIO_NUM  4

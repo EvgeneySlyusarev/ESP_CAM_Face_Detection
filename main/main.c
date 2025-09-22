@@ -20,7 +20,7 @@ void app_main(void)
     ESP_LOGI(TAG, "ESP32-CAM Streaming (double-buffer version)");
     ESP_LOGI(TAG, "Free heap: %d bytes", esp_get_free_heap_size());
 
-    // Инициализация NVS
+    // init NVS
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
@@ -56,7 +56,7 @@ void app_main(void)
     init_servo_pwm();
 
     // --- Servo command queue ---
-    servoQueue = xQueueCreate(1, sizeof(servo_cmd_t));
+    servoQueue = xQueueCreate(10, sizeof(servo_cmd_t));
     if (!servoQueue) {
         ESP_LOGE(TAG, "Failed to create servo queue");
         return;
