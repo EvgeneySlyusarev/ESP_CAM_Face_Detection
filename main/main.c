@@ -7,14 +7,18 @@
 #include "esp_log.h"
 #include "driver/gpio.h"
 #include "nvs_flash.h"
+#include "esp_netif.h"
+#include "esp_event.h"
+#include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "freertos/semphr.h"
-#include "freertos/queue.h"
+
+#define TAG "MAIN"
 
 void app_main(void)
 {
-    ESP_LOGI("MAIN", "ESP32-CAM Streaming with multitasking");
+    ESP_LOGI(TAG, "ESP32-CAM Streaming (double-buffer version)");
+    ESP_LOGI(TAG, "Free heap: %d bytes", esp_get_free_heap_size());
 
     // Инициализация NVS
     esp_err_t ret = nvs_flash_init();
@@ -29,71 +33,42 @@ void app_main(void)
     ret = esp_event_loop_create_default();
     ESP_ERROR_CHECK(ret);
 
-    // Инициализация объектов FreeRTOS для многозадачности
-    frame_mutex = xSemaphoreCreateMutex();
-    camera_mutex = xSemaphoreCreateMutex();
-    servo_queue = xQueueCreate(10, sizeof(servo_command_t));
-    wifi_event_group = xEventGroupCreate();
-
-    // Проверка создания объектов
-    if (!frame_mutex || !camera_mutex || !servo_queue || !wifi_event_group) {
-        ESP_LOGE("MAIN", "Failed to create FreeRTOS objects");
+    if (init_sd() != ESP_OK || !read_config_from_sd()) {
+        ESP_LOGE(TAG, "Failed to initialize SD card or read config");
         return;
     }
 
-    // Инициализация SD карты
-    ret = init_sd();
-    if (ret != ESP_OK) {
-        ESP_LOGE("MAIN", "SD card init failed");
+    esp_netif_create_default_wifi_sta();
+    wifi_init(); 
+
+    // --- Camera ---
+    if (camera_init(NULL) != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize camera");
         return;
     }
 
-    // Чтение конфигурации
-    if (!read_config_from_sd()) {
-        ESP_LOGE("MAIN", "Failed to read config from SD");
-        return;
-    }
+    // --- Flash LED ---
+    gpio_reset_pin(FLASH_GPIO_NUM);
+    gpio_set_direction(FLASH_GPIO_NUM, GPIO_MODE_OUTPUT);
+    gpio_set_level(FLASH_GPIO_NUM, 0);
 
-    // Инициализация Wi-Fi
-    if (wifi_init() != ESP_OK) {
-        ESP_LOGE("MAIN", "Wi-Fi init failed");
-        return;
-    } else {
-        // Ожидание подключения Wi-Fi
-        EventBits_t bits = xEventGroupWaitBits(wifi_event_group, 
-                                             WIFI_CONNECTED_BIT,
-                                             pdFALSE, pdTRUE, 10000 / portTICK_PERIOD_MS);
-        
-        if (bits & WIFI_CONNECTED_BIT) {
-            esp_netif_ip_info_t ip_info;
-            esp_netif_t *sta_netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
-            if (sta_netif && esp_netif_get_ip_info(sta_netif, &ip_info) == ESP_OK) {
-                ESP_LOGI("MAIN", "Device IP address: " IPSTR, IP2STR(&ip_info.ip));
-            }
-        } else {
-            ESP_LOGE("MAIN", "Wi-Fi connection timeout");
-            return;
-        }
-    }
-
-    // Инициализация камеры
-    if (camera_init() != ESP_OK) {
-        ESP_LOGE("MAIN", "Camera init failed");
-        return;
-    }
-
-    // Инициализация сервомоторов
+    // --- Servo PWM ---
     init_servo_pwm();
 
-    // Запуск веб-сервера
-    start_webserver();
-
-    ESP_LOGI("MAIN", "Application started successfully");
-
-    // Бесконечный цикл для мониторинга
-    while (1) {
-        ESP_LOGI("MAIN", "Stats: Captured: %u, Sent: %u, Dropped: %u",
-                total_frames_captured, total_frames_sent, total_frames_dropped);
-        vTaskDelay(5000 / portTICK_PERIOD_MS); // Каждые 5 секунд
+    // --- Servo command queue ---
+    servoQueue = xQueueCreate(1, sizeof(servo_cmd_t));
+    if (!servoQueue) {
+        ESP_LOGE(TAG, "Failed to create servo queue");
+        return;
     }
+
+    // --- Start HTTP server ---
+    start_webserver();  
+
+    // --- Tasks ---
+    xTaskCreate(camera_capture_task, "camera_capture_task", 8192, NULL, 3, NULL);
+    xTaskCreate(stream_task,         "stream_task",         8192, NULL, 4, NULL);
+    xTaskCreate(servo_task,          "servo_task",          4096, NULL, 5, NULL);
+
+    ESP_LOGI(TAG, "Application started successfully");
 }

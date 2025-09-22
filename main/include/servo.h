@@ -1,9 +1,15 @@
-#pragma once
-#include "driver/ledc.h"
+#ifndef SERVO_H
+#define SERVO_H
 
-// Глобальные переменные для хранения текущих углов
-extern int current_angle1;
-extern int current_angle2;
+#include "esp_http_server.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+
+#define SERVO_PIN_1 12
+#define SERVO_PIN_2 13
 
 void init_servo_pwm(void);
 void set_servo(int pin, int angle, int max_angle);
+void servo_task(void *pvParameters);
+
+#endif

@@ -1,34 +1,34 @@
-// globals.c
 #include "common.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/semphr.h"
-#include "freertos/event_groups.h"
 
-// Wi-Fi конфигурация
 char wifiSSID[64] = {0};
 char wifiPASS[64] = {0};
 
-// Статистика
-uint32_t total_frames_captured = 0;
-uint32_t total_frames_sent = 0;
-uint32_t total_frames_dropped = 0;
+wifi_cred_t wifi_list[MAX_WIFI];
+int wifi_count = 0;
 
-// Кадры
-frame_t last_frame = { .data = NULL, .len = 0, .frame_number = 0 };
-SemaphoreHandle_t frame_mutex = NULL;
+volatile uint32_t total_frames_captured = 0;
+volatile uint32_t total_frames_sent = 0;
+volatile uint32_t total_frames_dropped = 0;
 
-// Wi-Fi
 EventGroupHandle_t wifi_event_group = NULL;
 const EventBits_t WIFI_CONNECTED_BIT = BIT0;
 
-// Многозадачность
-QueueHandle_t servo_queue = NULL;
-TaskHandle_t video_task_handle = NULL;
-TaskHandle_t servo_task_handle = NULL;
-int current_angle1 = 90;
-int current_angle2 = 45;
-SemaphoreHandle_t camera_mutex = NULL;
+// MJPEG client
+mjpeg_client_t mjpeg_client = {0};
 
-// Конфигурация Wi-Fi
-my_wifi_entry_t wifi_entries[MAX_WIFI_ENTRIES] = {0};
-int wifi_entry_count = 0;
+// Servo queue and positions
+QueueHandle_t servoQueue = NULL;
+volatile int current_angleX = 90;
+volatile int current_angleY = 45;
+
+// Двойной буфер для кадров камеры
+frame_double_buffer_t frame_buffer = {
+    .fb = { NULL, NULL },
+    .write_index = 0,
+    .read_index  = 1,
+    .ready = { false, false }
+};
+
+// HTTP server handles
+httpd_handle_t stream_server = NULL;
+httpd_handle_t control_server = NULL;

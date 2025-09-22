@@ -7,7 +7,9 @@
 #include "esp_vfs_fat.h"
 #include "common.h"
 #include "esp_log.h"
-
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
 
 bool read_config_from_sd(void)
 {
@@ -17,43 +19,31 @@ bool read_config_from_sd(void)
         return false;
     }
 
-    wifi_entry_count = 0;
-    char line[256];
-    my_wifi_entry_t current = {0};
+    wifi_count = 0;
+    char line[128];
 
-    while (fgets(line, sizeof(line), f)) {
-        line[strcspn(line, "\r\n")] = 0;  // убрать \n
-
-        if (strlen(line) == 0 || line[0] == '#') {
-            continue;
-        }
+    while (fgets(line, sizeof(line), f) && wifi_count < MAX_WIFI) {
+        line[strcspn(line, "\r\n")] = 0; // remove newline
+        if (strlen(line) == 0 || line[0] == '#') continue;
 
         if (strncmp(line, "WIFI_SSID=", 10) == 0) {
-            strncpy(current.ssid, line + 10, sizeof(current.ssid) - 1);
-            current.ssid[sizeof(current.ssid) - 1] = '\0';
+            strncpy(wifi_list[wifi_count].ssid, line + 10, SSID_MAX_LEN - 1);
         } else if (strncmp(line, "WIFI_PASS=", 10) == 0) {
-            strncpy(current.pass, line + 10, sizeof(current.pass) - 1);
-            current.pass[sizeof(current.pass) - 1] = '\0';
-
-            // закончили пару — сохраняем
-            if (wifi_entry_count < MAX_WIFI_ENTRIES) {
-                wifi_entries[wifi_entry_count++] = current;
-                memset(&current, 0, sizeof(current));
-            }
+            strncpy(wifi_list[wifi_count].pass, line + 10, PASS_MAX_LEN - 1);
+            wifi_count++; // добавили сеть после пароля
         }
     }
 
     fclose(f);
 
-    if (wifi_entry_count == 0) {
-        ESP_LOGE("CONFIG", "No WiFi entries found in config");
+    if (wifi_count == 0) {
+        ESP_LOGE("CONFIG", "No Wi-Fi networks found in config");
         return false;
     }
 
-    ESP_LOGI("CONFIG", "Loaded %d WiFi entries", wifi_entry_count);
-    for (int i = 0; i < wifi_entry_count; i++) {
-        ESP_LOGI("CONFIG", "[%d] SSID='%s' PASS='%s'",
-                 i, wifi_entries[i].ssid, wifi_entries[i].pass);
+    ESP_LOGI("CONFIG", "Loaded %d Wi-Fi networks from SD", wifi_count);
+    for (int i = 0; i < wifi_count; i++) {
+        ESP_LOGI("CONFIG", "SSID[%d]: %s", i, wifi_list[i].ssid);
     }
 
     return true;
@@ -64,9 +54,8 @@ esp_err_t init_sd(void)
     ESP_LOGI("CONFIG", "Initializing SD card (SDMMC 1-bit mode)...");
 
     sdmmc_host_t host = SDMMC_HOST_DEFAULT();
-
     sdmmc_slot_config_t slot_config = SDMMC_SLOT_CONFIG_DEFAULT();
-    slot_config.width = 1;   // ESP32-CAM поддерживает только 1-битный режим
+    slot_config.width = 1;  // ESP32-CAM поддерживает только 1-битный режим
 
     esp_vfs_fat_sdmmc_mount_config_t mount_config = {
         .format_if_mount_failed = false,

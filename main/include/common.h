@@ -1,64 +1,71 @@
 #ifndef COMMON_H
 #define COMMON_H
 
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-
+#include <stdint.h>
+#include <stddef.h>
+#include <stdbool.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "freertos/semphr.h"
-#include "freertos/event_groups.h"  // ← ДОБАВЬТЕ ЭТОТ INCLUDE
 #include "freertos/queue.h"
-
-#include "esp_log.h"
+#include "freertos/event_groups.h"
 #include "esp_err.h"
-#include "esp_netif.h"
-#include "esp_wifi.h"
 #include "esp_event.h"
-#include "nvs_flash.h"
-
 #include "driver/sdmmc_host.h"
 #include "driver/sdmmc_defs.h"
 #include "sdmmc_cmd.h"
 #include "esp_vfs_fat.h"
+#include "esp_http_server.h"
 #include "esp_camera.h"
 
-#include "config.h"
+// ---------------- Wi-Fi ----------------
+#define MAX_WIFI        5
+#define SSID_MAX_LEN    32
+#define PASS_MAX_LEN    64
 
-// --- Конфигурационные переменные ---
-extern char wifiSSID[64];
-extern char wifiPASS[64];
-
-// --- Статистика ---
-extern uint32_t total_frames_captured;
-extern uint32_t total_frames_sent;
-extern uint32_t total_frames_dropped;
-
-// --- Структура для кадров ---
 typedef struct {
-    camera_fb_t *fb;  // указатель на fb
-    uint8_t *data;    // указатель на jpeg данные
-    size_t len;
-    uint32_t frame_number;
-} frame_t;
+    char ssid[SSID_MAX_LEN];
+    char pass[PASS_MAX_LEN];
+} wifi_cred_t;
 
-// --- Глобальный буфер последнего кадра ---
-extern frame_t last_frame;
-extern SemaphoreHandle_t frame_mutex;
+extern wifi_cred_t wifi_list[MAX_WIFI];
+extern int wifi_count;
 
-// --- GPIO ---
-#define FLASH_GPIO_NUM    4
-#define SERVO_PIN_1       12
-#define SERVO_PIN_2       13
+// ---------------- Queues ----------------
+extern QueueHandle_t servoQueue;
 
-// --- Константы ---
-#define MAX_FRAME_SIZE (60 * 1024)
-#define FLASH_DELAY_MS 25
-#define CONFIG_FILE_PATH "/sdcard/config.txt"
+// ---------------- Servo ----------------
+typedef struct {
+    int angleX;
+    int angleY;
+} servo_cmd_t;
 
-// --- Wi-Fi Event Group ---
-extern EventGroupHandle_t wifi_event_group;  
+extern volatile int current_angleX;
+extern volatile int current_angleY;
+
+// ---------------- Frames (double buffer) ----------------
+typedef struct {
+    camera_fb_t *fb[2];   // два буфера
+    int write_index;      // индекс записи
+    int read_index;       // индекс чтения
+    bool ready[2];        // готовность кадра
+} frame_double_buffer_t;
+
+extern frame_double_buffer_t frame_buffer;
+
+extern volatile uint32_t total_frames_captured;
+extern volatile uint32_t total_frames_sent;
+extern volatile uint32_t total_frames_dropped;
+
+// ---------------- MJPEG Client ----------------
+typedef struct {
+    int connected;
+    httpd_req_t *req;
+} mjpeg_client_t;
+
+extern mjpeg_client_t mjpeg_client;
+
+// ---------------- Wi-Fi Event ----------------
+extern EventGroupHandle_t wifi_event_group;
 extern const EventBits_t WIFI_CONNECTED_BIT;
 
 // --- Многозадачность: Очередь для сервомоторов ---
@@ -69,4 +76,22 @@ extern int current_angle1;
 extern int current_angle2;
 extern SemaphoreHandle_t camera_mutex;
 
-#endif
+// ---------------- GPIO ----------------
+#define FLASH_GPIO_NUM  4
+#define SERVO_PIN_1     12
+#define SERVO_PIN_2     13
+#define FLASH_DELAY_MS  25   
+
+#define QUEUE_SIZE      2
+#define MAX_FRAME_SIZE  (60 * 1024)
+#define CONFIG_FILE_PATH "/sdcard/config.txt"
+
+extern httpd_handle_t stream_server;
+extern httpd_handle_t control_server;
+
+// ---------------- Tasks ----------------
+void camera_capture_task(void *arg);
+void servo_task(void *arg);
+void stream_task(void *arg);
+
+#endif // COMMON_H

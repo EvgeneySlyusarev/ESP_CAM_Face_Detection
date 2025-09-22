@@ -1,5 +1,6 @@
 idf_component_register(
     SRCS "main.c"
+         "src/globals.c"
          "src/config.c"
          "src/network.c"
          "src/camera.c"
