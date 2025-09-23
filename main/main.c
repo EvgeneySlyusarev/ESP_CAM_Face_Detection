@@ -38,7 +38,6 @@ void app_main(void)
         return;
     }
 
-    esp_netif_create_default_wifi_sta();
     wifi_init(); 
 
     // --- Camera ---
