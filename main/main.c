@@ -54,13 +54,6 @@ void app_main(void)
     // --- Servo PWM ---
     init_servo_pwm();
 
-    // --- Servo command queue ---
-    servoQueue = xQueueCreate(10, sizeof(servo_cmd_t));
-    if (!servoQueue) {
-        ESP_LOGE(TAG, "Failed to create servo queue");
-        return;
-    }
-
     // --- Start HTTP server ---
     start_webserver();  
 

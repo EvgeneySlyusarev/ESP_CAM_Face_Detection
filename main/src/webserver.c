@@ -100,34 +100,29 @@ static esp_err_t stream_handler(httpd_req_t *req)
 // --- Servo Handler ---
 static esp_err_t servo_handler(httpd_req_t *req)
 {
-    char buf[512];
-    int ret = httpd_req_recv(req, buf, sizeof(buf)-1);
-    if (ret < 0) buf[0] = 0;
-    buf[ret] = 0;
+    char query[64];
+    int x = target_angleX;
+    int y = target_angleY;
 
-    int angleX = 90, angleY = 45;
-    char *p;
-    if ((p = strstr(buf, "angleX="))) angleX = atoi(p+7);
-    if ((p = strstr(buf, "angleY="))) angleY = atoi(p+7);
-
-    ESP_LOGI("SERVO", "Received servo command: angleX=%d, angleY=%d", angleX, angleY);
-
-    if (angleX < 0) angleX = 0; 
-    if (angleX > 180) angleX = 180;
-    if (angleY < 0) angleY = 0;
-    if (angleY > 90) angleY = 90;
-
-    servo_cmd_t cmd = { angleX, angleY };
-    if (xQueueSend(servoQueue, &cmd, 0) != pdTRUE) {
-        httpd_resp_set_status(req, "503 Service Unavailable");
-        httpd_resp_sendstr(req, "{\"status\":\"queue_full\"}");
-        return ESP_FAIL;
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK) {
+        char param[8];
+        if (httpd_query_key_value(query, "x", param, sizeof(param)) == ESP_OK)
+            x = atoi(param);
+        if (httpd_query_key_value(query, "y", param, sizeof(param)) == ESP_OK)
+            y = atoi(param);
     }
 
-    char resp[80];
-    snprintf(resp, sizeof(resp), "{\"servoX\":%d,\"servoY\":%d,\"status\":\"queued\"}", angleX, angleY);
-    httpd_resp_set_type(req, "application/json");
-    httpd_resp_send(req, resp, strlen(resp));
+    // Ограничение
+    if (x < 0) x = 0;
+    if (x > 180) x = 180;
+    if (y < 0) y = 0;
+    if (y > 90) y = 90;
+
+    // ✔ Просто обновляем цель
+    target_angleX = x;
+    target_angleY = y;
+
+    httpd_resp_sendstr(req, "{\"status\":\"ok\"}");
     return ESP_OK;
 }
 

@@ -5,22 +5,30 @@
 
 static const char *TAG = "SERVO";
 
+#define SERVO_STEP 1          // шаг в градусах
+#define SERVO_DELAY_MS 20     // задержка между шагами
+
 static const int max_angleX = 180;
 static const int max_angleY = 90;
 
 // task for processing servo commands
-void servo_task(void *pvParameters) {
-    servo_cmd_t cmd;
-    
+void servo_task(void *pvParameters)
+{
     while (1) {
 
-        if (xQueueReceive(servoQueue, &cmd, portMAX_DELAY) == pdTRUE) {
-            set_servo(SERVO_PIN_1, cmd.angleX, 180);
-            set_servo(SERVO_PIN_2, cmd.angleY, 90);
-            
-            ESP_LOGI(TAG, "Servo angles set: %d, %d", cmd.angleX, cmd.angleY);
-        }
+        if (current_angleX < target_angleX) current_angleX += SERVO_STEP;
+        else if (current_angleX > target_angleX) current_angleX -= SERVO_STEP;
+
+        if (current_angleY < target_angleY) current_angleY += SERVO_STEP;
+        else if (current_angleY > target_angleY) current_angleY -= SERVO_STEP;
+
+        set_servo(SERVO_PIN_1, current_angleX, max_angleX);
+        set_servo(SERVO_PIN_2, current_angleY, max_angleY);
+
+        vTaskDelay(pdMS_TO_TICKS(SERVO_DELAY_MS));
     }
+    ESP_LOGI(TAG, "Servo target updated: X=%d Y=%d",
+         target_angleX, target_angleY);
 }
 
 void set_servo(int pin, int angle, int max_angle)
@@ -76,45 +84,28 @@ void init_servo_pwm()
 static esp_err_t servo_handler(httpd_req_t *req)
 {
     char query[64];
-    int angleX = current_angleX;
-    int angleY = current_angleY;
+    int x = target_angleX;
+    int y = target_angleY;
 
     if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK) {
         char param[8];
-        if (httpd_query_key_value(query, "x", param, sizeof(param)) == ESP_OK) {
-            angleX = atoi(param);
-        }
-        if (httpd_query_key_value(query, "y", param, sizeof(param)) == ESP_OK) {
-            angleY = atoi(param);
-        }
+        if (httpd_query_key_value(query, "x", param, sizeof(param)) == ESP_OK)
+            x = atoi(param);
+        if (httpd_query_key_value(query, "y", param, sizeof(param)) == ESP_OK)
+            y = atoi(param);
     }
 
-    // Ограничение значений
-    angleX = (angleX < 0) ? 0 : (angleX > max_angleX ? max_angleX : angleX);
-    angleY = (angleY < 0) ? 0 : (angleY > max_angleY ? max_angleY : angleY);
+    if (x < 0) x = 0;
+    if (x > max_angleX) x = max_angleX;
+    if (y < 0) y = 0;
+    if (y > max_angleY) y = max_angleY;
 
-    current_angleX = angleX;
-    current_angleY = angleY;
+    target_angleX = x;
+    target_angleY = y;
 
-    // Отправляем команду в очередь
-    servo_cmd_t cmd = { angleX, angleY };
-    if (xQueueSend(servoQueue, &cmd, 0) != pdTRUE) {
-        httpd_resp_set_status(req, "503 Service Unavailable");
-        httpd_resp_sendstr(req, "{\"status\":\"queue_full\"}");
-        return ESP_FAIL;
-    }
-
-    // Ответ клиенту
-    char resp[64];
-    snprintf(resp, sizeof(resp),
-             "{\"servoX\":%d,\"servoY\":%d,\"status\":\"ok\"}",
-             angleX, angleY);
-    httpd_resp_set_type(req, "application/json");
-    httpd_resp_send(req, resp, strlen(resp));
-
+    httpd_resp_sendstr(req, "{\"status\":\"ok\"}");
     return ESP_OK;
 }
-
 
 void start_servo_server(httpd_handle_t server)
 {

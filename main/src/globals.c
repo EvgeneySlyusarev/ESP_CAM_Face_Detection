@@ -20,6 +20,8 @@ mjpeg_client_t mjpeg_client = {0};
 QueueHandle_t servoQueue = NULL;
 volatile int current_angleX = 90;
 volatile int current_angleY = 45;
+volatile int target_angleX = 90;
+volatile int target_angleY = 45;
 
 // Двойной буфер для кадров камеры
 frame_double_buffer_t frame_buffer = {

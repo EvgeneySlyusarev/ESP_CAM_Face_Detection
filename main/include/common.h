@@ -30,17 +30,11 @@ typedef struct {
 extern wifi_cred_t wifi_list[MAX_WIFI];
 extern int wifi_count;
 
-// ---------------- Queues ----------------
-extern QueueHandle_t servoQueue;
-
-// ---------------- Servo ----------------
-typedef struct {
-    int angleX;
-    int angleY;
-} servo_cmd_t;
 
 extern volatile int current_angleX;
 extern volatile int current_angleY;
+extern volatile int target_angleX;
+extern volatile int target_angleY;
 
 // ---------------- Frames (double buffer) ----------------
 typedef struct {
@@ -67,11 +61,6 @@ extern mjpeg_client_t mjpeg_client;
 // ---------------- Wi-Fi Event ----------------
 extern EventGroupHandle_t wifi_event_group;
 extern const EventBits_t WIFI_CONNECTED_BIT;
-
-// --- Многозадачность: Очередь для сервомоторов ---
-extern QueueHandle_t servoQueue;
-extern volatile int current_angleX;
-extern volatile int current_angleY;
 
 // ---------------- GPIO ----------------
 #define FLASH_GPIO_NUM  4
