@@ -53,6 +53,7 @@ esp_err_t camera_init(const camera_pins_t *pins)
         .ledc_channel   = LEDC_CHANNEL_0,
         .pixel_format   = PIXFORMAT_JPEG,
         .frame_size     = FRAMESIZE_VGA,
+        .fb_location = CAMERA_FB_IN_PSRAM,
         .jpeg_quality   = 12,
         .fb_count       = 2,
         .grab_mode      = CAMERA_GRAB_LATEST
@@ -76,18 +77,15 @@ void camera_capture_task(void *pvParameters)
     gpio_set_direction(cfg->flash_gpio, GPIO_MODE_OUTPUT);
     gpio_set_level(cfg->flash_gpio, 0);
 
-    ESP_LOGI(TAG, "Camera capture task started: %s", pcTaskGetName(NULL));
-
     while (1) {
         if (xEventGroupGetBits(wifi_event_group) & WIFI_CONNECTED_BIT) {
             camera_fb_t* fb = esp_camera_fb_get();
             if (!fb) {
-                ESP_LOGW(TAG, "Frame grab failed");
                 vTaskDelay(pdMS_TO_TICKS(10));
                 continue;
             }
 
-            int idx = frame_buffer.write_index;
+          volatile uint8_t idx = frame_buffer.write_index;
 
         if (frame_buffer.ready[idx] && frame_buffer.fb[idx]) {
             esp_camera_fb_return(frame_buffer.fb[idx]);
@@ -96,10 +94,12 @@ void camera_capture_task(void *pvParameters)
             frame_buffer.fb[idx] = fb;
             frame_buffer.ready[idx] = true;
 
-            frame_buffer.write_index ^= 1;
+            __asm__ volatile ("" ::: "memory");
+
+            frame_buffer.write_index = idx ^ 1;
 
             total_frames_captured++;
         }
-        vTaskDelay(pdMS_TO_TICKS(5));
+        taskYIELD();
     }
 }

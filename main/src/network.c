@@ -20,9 +20,11 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
             ESP_LOGI(TAG, "Wi-Fi started, trying to connect...");
             break;
         case WIFI_EVENT_STA_DISCONNECTED:
-            ESP_LOGW(TAG, "Disconnected from Wi-Fi, retrying...");
-            esp_wifi_connect();
-            break;
+    ESP_LOGW(TAG,
+        "Disconnected from Wi-Fi, retrying...");
+    xEventGroupClearBits(wifi_event_group, WIFI_CONNECTED_BIT);
+    esp_wifi_connect();
+    break;
         default:
             break;
         }
@@ -123,9 +125,11 @@ esp_err_t wifi_init(void)
     free(apRecords);
 
     if (best_ssid[0] == '\0') {
-        ESP_LOGW(TAG, "No known networks available!");
-        return ESP_FAIL;
-    }
+    ESP_LOGW(TAG, "No known networks available!");
+    ESP_LOGW(TAG, "Scanned AP count: %u, Known Wi-Fi count: %u", apCount, wifi_count);
+    return ESP_FAIL;
+}
+
 
     ESP_LOGI(TAG, "Connecting to SSID: %s (RSSI=%d)", best_ssid, best_rssi);
 
@@ -150,14 +154,24 @@ esp_err_t wifi_init(void)
     );
 
     if (!(bits & WIFI_CONNECTED_BIT)) {
-        // Доп. диагностика: покажем текущее состояние IP info
-        esp_netif_ip_info_t ip;
-        if (esp_netif_get_ip_info(sta_netif, &ip) == ESP_OK) {
-            ESP_LOGW(TAG, "No GOT_IP event, but ip_info now: " IPSTR, IP2STR(&ip.ip));
+    esp_netif_ip_info_t ip;
+    if (esp_netif_get_ip_info(sta_netif, &ip) == ESP_OK) {
+        if (ip.ip.addr != 0) {
+            ESP_LOGW(TAG,
+                "No GOT_IP event, but IP already assigned: " IPSTR,
+                IP2STR(&ip.ip));
+        } else {
+            ESP_LOGW(TAG, "No IP assigned (DHCP failed or not completed)");
         }
-        ESP_LOGE(TAG, "Failed to connect to Wi-Fi or acquire IP after timeout!");
-        return ESP_FAIL;
+    } else {
+        ESP_LOGW(TAG, "Failed to read IP info from netif");
     }
+
+    ESP_LOGE(TAG,
+        "Failed to connect to Wi-Fi or acquire IP after timeout (30s)");
+    return ESP_FAIL;
+}
+
 
     return ESP_OK;
 }

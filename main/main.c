@@ -58,9 +58,9 @@ void app_main(void)
     start_webserver();  
 
     // --- Tasks ---
-    xTaskCreate(camera_capture_task, "camera_capture_task", 8192, NULL, 3, NULL);
+    xTaskCreate(camera_capture_task, "camera_capture_task", 8192, NULL, 5, NULL);
     xTaskCreate(stream_task,         "stream_task",         8192, NULL, 4, NULL);
-    xTaskCreate(servo_task,          "servo_task",          4096, NULL, 5, NULL);
+    xTaskCreate(servo_task,          "servo_task",          4096, NULL, 2, NULL);
 
     ESP_LOGI(TAG, "Application started successfully");
 }

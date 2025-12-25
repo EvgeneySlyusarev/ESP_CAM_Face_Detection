@@ -14,19 +14,21 @@ void stream_task(void *pvParameters)
 {
     char part_buf[512];
     static const char* _STREAM_BOUNDARY = "\r\n--frame\r\n";
-    static const char* _STREAM_PART = "Content-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n";
+    static const char* _STREAM_PART =
+        "Content-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n";
 
-    ESP_LOGI("TASK", "Started: %s, free stack=%d", pcTaskGetName(NULL), uxTaskGetStackHighWaterMark(NULL));
     uint32_t frame_number = 0;
+    static uint32_t last_send = 0;   // tick of last sent frame
 
     while (1) {
-        // Ждём Wi-Fi
+
+        // --- Wait for Wi-Fi ---
         if (!(xEventGroupGetBits(wifi_event_group) & WIFI_CONNECTED_BIT)) {
             vTaskDelay(pdMS_TO_TICKS(1000));
             continue;
         }
 
-        // Ждём подключённого MJPEG клиента
+        // --- Wait for MJPEG client ---
         if (!mjpeg_client.connected || !mjpeg_client.req) {
             vTaskDelay(pdMS_TO_TICKS(200));
             continue;
@@ -34,51 +36,77 @@ void stream_task(void *pvParameters)
 
         int idx = frame_buffer.read_index;
 
-        // Если кадр готов
+        // --- Frame ready ---
         if (frame_buffer.ready[idx] && frame_buffer.fb[idx]) {
+
             camera_fb_t *fb = frame_buffer.fb[idx];
 
-            // Проверка JPEG
-            if (fb->len > 4 && fb->buf[0] == 0xFF && fb->buf[1] == 0xD8 &&
-                fb->buf[fb->len-2] == 0xFF && fb->buf[fb->len-1] == 0xD9) {
+            // --- FPS limit (~20 FPS) ---
+            uint32_t now = xTaskGetTickCount();
+            if (now - last_send < pdMS_TO_TICKS(50)) {
+                // Too early to send next frame
+                vTaskDelay(pdMS_TO_TICKS(1));
+                continue;
+            }
+            last_send = now;
 
-                int hlen = snprintf(part_buf, sizeof(part_buf), _STREAM_PART, fb->len);
+            // --- JPEG sanity check ---
+            if (fb->len > 4 &&
+                fb->buf[0] == 0xFF && fb->buf[1] == 0xD8 &&
+                fb->buf[fb->len - 2] == 0xFF &&
+                fb->buf[fb->len - 1] == 0xD9) {
 
-                // Отправка данных клиенту
-                if (httpd_resp_send_chunk(mjpeg_client.req, _STREAM_BOUNDARY, strlen(_STREAM_BOUNDARY)) != ESP_OK ||
-                    httpd_resp_send_chunk(mjpeg_client.req, part_buf, hlen) != ESP_OK ||
-                    httpd_resp_send_chunk(mjpeg_client.req, (const char*)fb->buf, fb->len) != ESP_OK) {
-                    
+                int hlen = snprintf(part_buf, sizeof(part_buf),
+                                    _STREAM_PART, fb->len);
+
+                // --- Send frame ---
+                if (httpd_resp_send_chunk(mjpeg_client.req,
+                                          _STREAM_BOUNDARY,
+                                          strlen(_STREAM_BOUNDARY)) != ESP_OK ||
+                    httpd_resp_send_chunk(mjpeg_client.req,
+                                          part_buf, hlen) != ESP_OK ||
+                    httpd_resp_send_chunk(mjpeg_client.req,
+                                          (const char *)fb->buf,
+                                          fb->len) != ESP_OK) {
+
                     ESP_LOGW("STREAM", "Client disconnected, resetting");
                     mjpeg_client.connected = 0;
                     mjpeg_client.req = NULL;
                 } else {
                     total_frames_sent++;
                     frame_number++;
-                    ESP_LOGI("STREAM", "Frame #%u sent, size=%u bytes", frame_number, fb->len);
                 }
             }
 
-            // Возвращаем буфер обратно в пул камеры
+            // --- Return frame buffer to camera ---
             esp_camera_fb_return(fb);
             frame_buffer.fb[idx] = NULL;
             frame_buffer.ready[idx] = false;
 
-            // Переключаем индекс чтения
+            // --- Switch buffer index ---
             frame_buffer.read_index ^= 1;
         }
 
-        vTaskDelay(pdMS_TO_TICKS(10));
+        // Yield CPU (very small delay)
+        vTaskDelay(pdMS_TO_TICKS(1));
     }
 }
 
+
 // --- MJPEG Handler ---
 static esp_err_t stream_handler(httpd_req_t *req)
-{
-    ESP_LOGI("MJPEG", "Client connected");
+{    
     while (!(xEventGroupGetBits(wifi_event_group) & WIFI_CONNECTED_BIT)) {
         vTaskDelay(pdMS_TO_TICKS(500));
     }
+
+    if (mjpeg_client.connected) {
+        ESP_LOGW("MJPEG", "Second client rejected");
+        httpd_resp_send_err(req, 409, "Stream already in use");
+        return ESP_FAIL;
+    }
+
+    ESP_LOGI("MJPEG", "Client connected");
 
     mjpeg_client.connected = 1;
     mjpeg_client.req = req;
