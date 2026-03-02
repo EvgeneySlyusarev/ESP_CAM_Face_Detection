@@ -51,9 +51,9 @@ esp_err_t camera_init(const camera_pins_t *pins)
         .ledc_timer = LEDC_TIMER_0,
         .ledc_channel = LEDC_CHANNEL_0,
         .pixel_format = PIXFORMAT_RGB565,
-        .frame_size = FRAMESIZE_QVGA,
+        .frame_size = FRAMESIZE_VGA,
         .fb_location = CAMERA_FB_IN_PSRAM,
-        .jpeg_quality = 12,
+        //.jpeg_quality = 12,
         .fb_count = 2,
         .grab_mode = CAMERA_GRAB_LATEST};
 
