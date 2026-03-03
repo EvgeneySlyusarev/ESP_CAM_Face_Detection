@@ -1,5 +1,9 @@
-# build.ps1
-# PowerShell script for building ESP32-CAM project with ESP-IDF
+# flash.ps1
+# One-click build + flash script for ESP32-CAM project with ESP-IDF
+
+param(
+    [string]$Port = ""
+)
 
 $ErrorActionPreference = "Stop"
 
@@ -49,9 +53,17 @@ Write-Host "Using IDF_PYTHON_ENV_PATH=$selectedEnv"
 Write-Host "Activating ESP-IDF environment..."
 . "$IDF_PATH\export.ps1"
 
-# --- Сборка проекта ---
 $PROJECT_PATH = Get-Location
-Write-Host "Building project in $PROJECT_PATH ..."
-idf.py build
+Write-Host "Build + flash project in $PROJECT_PATH ..."
 
-Write-Host "Build finished!"
+if ($Port) {
+    idf.py -p $Port build flash
+}
+elseif ($env:ESPPORT) {
+    idf.py -p $env:ESPPORT build flash
+}
+else {
+    idf.py build flash
+}
+
+Write-Host "Flash finished!"

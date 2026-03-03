@@ -6,10 +6,11 @@
             "type": "shell",
             "command": "powershell",
             "args": [
-                "-ExecutionPolicy", "Bypass",
+                "-ExecutionPolicy",
+                "Bypass",
                 "-NoProfile",
-                "-Command",
-                "& { . 'C:/Espressif/frameworks/esp-idf-v5.5/export.ps1'; idf.py build }"
+                "-File",
+                "${workspaceFolder}/build.ps1"
             ],
             "options": {
                 "cwd": "${workspaceFolder}"
@@ -19,7 +20,22 @@
                 "kind": "build",
                 "isDefault": true
             }
+        },
+        {
+            "label": "ESP-IDF Flash (1-click)",
+            "type": "shell",
+            "command": "powershell",
+            "args": [
+                "-ExecutionPolicy",
+                "Bypass",
+                "-NoProfile",
+                "-File",
+                "${workspaceFolder}/flash.ps1"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": "$msCompile"
         }
     ]
 }
-
