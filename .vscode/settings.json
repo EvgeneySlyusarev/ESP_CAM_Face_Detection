@@ -21,5 +21,6 @@
     "C_Cpp.errorSquiggles": "disabled",
     "files.associations": {
         "esp_log.h": "c"
-    }
+    },
+    "idf.currentSetup": "C:/Espressif/frameworks/esp-idf-v5.5/"
 }

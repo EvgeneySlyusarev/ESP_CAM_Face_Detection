@@ -1,32 +1,34 @@
-# _Sample project_
+# ESP CAM Face Detection
 
-(See the README.md file in the upper level 'examples' directory for more information about examples.)
+Проект на ESP-IDF для ESP32-CAM с обработкой видеопотока и сетевыми компонентами.
 
-This is the simplest buildable example. The example is used by command `idf.py create-project`
-that copies the project to user specified path and set it's name. For more information follow the [docs page](https://docs.espressif.com/projects/esp-idf/en/latest/api-guides/build-system.html#start-a-new-project)
+## Версия ПО
 
+- **ESP-IDF (требование проекта):** `>= 5.5` (см. `idf_component.yml`)
+- **ESP-IDF (локальная сборка в этом репозитории):** `5.5.0` (см. `build/config.env`)
+- **Цель сборки:** `esp32`
+- **Зависимости компонентов:**
+	- `esp_jpeg ^1.3.0`
+	- `esp_http_client ^1.1.0`
+	- `cJSON ^1.7.0`
+	- `esp_websocket_client *`
 
+## Перенос параметров ESP-IDF (`sdkconfig`)
 
-## How to use example
-We encourage the users to use the example as a template for the new projects.
-A recommended way is to follow the instructions on a [docs page](https://docs.espressif.com/projects/esp-idf/en/latest/api-guides/build-system.html#start-a-new-project).
+Файл `sdkconfig` больше **не игнорируется** Git и хранится в репозитории для переноса параметров между машинами.
 
-## Example folder contents
+Рекомендуемый порядок:
 
-The project **sample_project** contains one source file in C language [main.c](main/main.c). The file is located in folder [main](main).
+1. На исходной машине настроить проект (`idf.py menuconfig` при необходимости).
+2. Закоммитить изменения `sdkconfig`.
+3. На новой машине выполнить:
+	 - `idf.py fullclean`
+	 - `idf.py reconfigure`
+	 - `idf.py build`
 
-ESP-IDF projects are built using CMake. The project build configuration is contained in `CMakeLists.txt`
-files that provide set of directives and instructions describing the project's source files and targets
-(executable, library, or both). 
+Если после обновления ESP-IDF часть опций устарела, выполните `idf.py menuconfig` и сохраните новый `sdkconfig`.
 
-Below is short explanation of remaining files in the project folder.
+## Сборка и прошивка
 
-```
-├── CMakeLists.txt
-├── main
-│   ├── CMakeLists.txt
-│   └── main.c
-└── README.md                  This is the file you are currently reading
-```
-Additionally, the sample project contains Makefile and component.mk files, used for the legacy Make based build system. 
-They are not used or needed when building with CMake and idf.py.
+- Сборка: `build.ps1` или задача VS Code **ESP-IDF Build**
+- Прошивка: `flash.ps1` или задача VS Code **ESP-IDF Flash (1-click)**
