@@ -4,3 +4,4 @@ dependencies:
   esp_http_client: "^1.1.0"
   cJSON: "^1.7.0"
   esp_websocket_client: "*"
+  espressif/mdns: "*"
