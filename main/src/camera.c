@@ -2,6 +2,7 @@
 #include "esp_camera.h"
 #include "esp_log.h"
 #include "driver/gpio.h"
+#include "esp_wifi.h"
 #include "common.h"
 
 static const char *TAG = "CAMERA";
@@ -26,10 +27,10 @@ static camera_pins_t default_pins = {
     .pin_pclk = 22,
     .flash_gpio = 4};
 
-// === Camera init function ===
 esp_err_t camera_init(const camera_pins_t *pins)
 {
     const camera_pins_t *cfg = pins ? pins : &default_pins;
+
     camera_config_t config = {
         .pin_pwdn = cfg->pin_pwdn,
         .pin_reset = cfg->pin_reset,
@@ -51,10 +52,10 @@ esp_err_t camera_init(const camera_pins_t *pins)
         .ledc_timer = LEDC_TIMER_0,
         .ledc_channel = LEDC_CHANNEL_0,
         .pixel_format = PIXFORMAT_JPEG,
-        .frame_size = FRAMESIZE_VGA,
+        .frame_size = FRAMESIZE_XGA, // 1024x768
+        .jpeg_quality = 15,          // Good quality
+        .fb_count = 2,               // Double buffering
         .fb_location = CAMERA_FB_IN_PSRAM,
-        .jpeg_quality = 10,
-        .fb_count = 2,
         .grab_mode = CAMERA_GRAB_LATEST};
 
     esp_err_t err = esp_camera_init(&config);
@@ -64,7 +65,37 @@ esp_err_t camera_init(const camera_pins_t *pins)
         return err;
     }
 
-    ESP_LOGI(TAG, "Camera initialized successfully");
+    ESP_LOGI(TAG, "Camera initialized");
+
+    // === Sensor tuning ===
+    sensor_t *s = esp_camera_sensor_get();
+
+    // Image adjustments
+    s->set_brightness(s, 1); // -2 to 2
+    s->set_contrast(s, 2);   // -2 to 2
+    s->set_saturation(s, 1); // -2 to 2
+    s->set_sharpness(s, 2);  // 0 to 3 (improves clarity)
+
+    // Auto controls
+    s->set_gain_ctrl(s, 1);
+    s->set_exposure_ctrl(s, 1);
+    s->set_whitebal(s, 1);
+    s->set_awb_gain(s, 1);
+
+    // Noise reduction and exposure improvements
+    s->set_denoise(s, 1);
+    s->set_aec2(s, 1);
+    s->set_gainceiling(s, (gainceiling_t)4);
+
+    // Orientation (change if needed)
+    s->set_hmirror(s, 0);
+    s->set_vflip(s, 0);
+
+    ESP_LOGI(TAG, "Sensor tuned for best visual quality");
+
+    // Disable WiFi sleep for stable stream
+    esp_wifi_set_ps(WIFI_PS_NONE);
+
     return ESP_OK;
 }
 
@@ -87,7 +118,7 @@ void camera_capture_task(void *pvParameters)
                 continue;
             }
 
-            volatile uint8_t idx = frame_buffer.write_index;
+            uint8_t idx = frame_buffer.write_index;
 
             if (frame_buffer.ready[idx] && frame_buffer.fb[idx])
             {
@@ -100,9 +131,9 @@ void camera_capture_task(void *pvParameters)
             __asm__ volatile("" ::: "memory");
 
             frame_buffer.write_index = idx ^ 1;
-
             total_frames_captured++;
         }
+
         taskYIELD();
     }
 }
